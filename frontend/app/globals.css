@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --background: #faf9f7;
+    --foreground: #1c1917;
+    --card: #ffffff;
+    --card-foreground: #1c1917;
+    --border: #e8e2d9;
+    --muted: #f5f2ee;
+    --muted-foreground: #78716c;
+    --accent: #f97316;
+    --radius: 1rem;
+  }
+}
+
+@theme {
+  --color-border: var(--border);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+}
+
+/* Base */
+*, *::before, *::after { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+/* Custom scrollbar — warm, subtle */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d6cfc6; border-radius: 100px; }
+::-webkit-scrollbar-thumb:hover { background: #a8a29e; }
+
+/* Selection */
+::selection { background: #fed7aa; color: #7c2d12; }
+
+/* Scrollbar hide utility */
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Smooth transitions */
+a, button { transition-property: color, background-color, border-color, opacity, box-shadow; transition-duration: 150ms; }
+
+/* Remove ALL default focus rings — we handle them manually per-component */
+:focus { outline: none; }
+:focus-visible { outline: none; }
+
+/* Buttons: very subtle focus indicator only for keyboard nav */
+button:focus-visible {
+  box-shadow: 0 0 0 2px #f97316;
+  border-radius: 8px;
+}
+
+/* Input resets */
+input, textarea, select { font-family: inherit; }
+input:focus, textarea:focus { outline: none; box-shadow: none; }

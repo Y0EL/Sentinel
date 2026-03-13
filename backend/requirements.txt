@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+crewai
+pydantic
+reportlab
+fpdf
+python-dotenv
+google-generativeai
+requests
+langchain
+langchain-google-genai
+langchain-openai
+langchain-community
+pillow

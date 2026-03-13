@@ -1,0 +1,33 @@
+{
+    "@timestamp": "2026-03-13T10:03:22.059603Z",
+    "event": {
+        "kind": "alert",
+        "category": [
+            "threat"
+        ],
+        "type": [
+            "indicator"
+        ],
+        "outcome": "success"
+    },
+    "threat": {
+        "indicator": {
+            "ip": null,
+            "file": {
+                "hash": {
+                    "sha256": "19aa5019f3c00211182b2a80dd9675721dac7cfb31d174436d3b8ec9f97d898b"
+                }
+            },
+            "type": "hash",
+            "confidence": "medium"
+        },
+        "feed": {
+            "name": "SENTINEL Fusion Engine"
+        }
+    },
+    "sentinel": {
+        "integrity_conflict": false,
+        "visual_artefacts_detected": false,
+        "reasoning_chain": "Hasil dari VirusTotal menunjukkan bahwa hash '19aa5019f3c00211182b2a80dd9675721dac7cfb31d174436d3b8ec9f97d898b' terdeteksi sebagai berbahaya oleh 59 dari 75 vendor keamanan. Skor reputasi yang sangat negatif (-79) mendukung temuan ini. Selain itu, file ini memiliki tag yang menunjukkan perilaku mencurigakan seperti 'long-sleeps', 'runtime-modules', dan 'direct-cpu-clock-access'. Tidak ada artefak visual yang tersedia untuk analisis, sehingga tidak ada kontradiksi dengan temuan visual."
+    }
+}

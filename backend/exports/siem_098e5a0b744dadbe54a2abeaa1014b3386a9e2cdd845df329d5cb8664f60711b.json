@@ -1,0 +1,33 @@
+{
+    "@timestamp": "2026-03-13T09:49:26.903557Z",
+    "event": {
+        "kind": "alert",
+        "category": [
+            "threat"
+        ],
+        "type": [
+            "indicator"
+        ],
+        "outcome": "success"
+    },
+    "threat": {
+        "indicator": {
+            "ip": null,
+            "file": {
+                "hash": {
+                    "sha256": "098e5a0b744dadbe54a2abeaa1014b3386a9e2cdd845df329d5cb8664f60711b"
+                }
+            },
+            "type": "hash",
+            "confidence": "medium"
+        },
+        "feed": {
+            "name": "SENTINEL Fusion Engine"
+        }
+    },
+    "sentinel": {
+        "integrity_conflict": false,
+        "visual_artefacts_detected": false,
+        "reasoning_chain": "Berdasarkan data dari VirusTotal, file ini terdeteksi sebagai berbahaya dengan 52 dari 76 vendor keamanan mengidentifikasinya sebagai ancaman. Skor reputasi yang negatif (-37) juga mendukung temuan bahwa file ini berisiko tinggi. Meskipun tidak ada kategori spesifik yang ditemukan, tag-tag seperti 'checks-user-input', 'peexe', dan 'runtime-modules' menunjukkan adanya karakteristik yang mencurigakan. Karena tidak ada artefak visual yang tersedia, analisis ini sepenuhnya bergantung pada data VirusTotal, yang menunjukkan bahwa file ini memang berbahaya."
+    }
+}

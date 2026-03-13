@@ -1,0 +1,29 @@
+{
+    "@timestamp": "2026-03-13T10:01:48.559212Z",
+    "event": {
+        "kind": "alert",
+        "category": [
+            "threat"
+        ],
+        "type": [
+            "indicator"
+        ],
+        "outcome": "success"
+    },
+    "threat": {
+        "indicator": {
+            "ip": "nopaper.life",
+            "file": null,
+            "type": "ipv4",
+            "confidence": "medium"
+        },
+        "feed": {
+            "name": "SENTINEL Fusion Engine"
+        }
+    },
+    "sentinel": {
+        "integrity_conflict": false,
+        "visual_artefacts_detected": false,
+        "reasoning_chain": "Berdasarkan hasil dari VirusTotal, tidak ada vendor keamanan dari 94 vendor yang mendeteksi ancaman pada target 'nopaper.life'. Skor reputasi juga menunjukkan nilai 0, yang berarti tidak ada indikasi aktivitas berbahaya. Selain itu, tidak ada artefak visual yang tersedia untuk dianalisis, sehingga tidak ada kontradiksi antara hasil VirusTotal dan analisis visual. Oleh karena itu, risiko dianggap sebagai 'INFO' dengan tingkat kepercayaan penuh."
+    }
+}
