@@ -12,3 +12,5 @@ langchain-google-genai
 langchain-openai
 langchain-community
 pillow
+taxii2-client
+stix2

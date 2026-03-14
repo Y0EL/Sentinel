@@ -1,0 +1,29 @@
+{
+    "@timestamp": "2026-03-13T12:55:12.619883Z",
+    "event": {
+        "kind": "alert",
+        "category": [
+            "threat"
+        ],
+        "type": [
+            "indicator"
+        ],
+        "outcome": "success"
+    },
+    "threat": {
+        "indicator": {
+            "ip": "IMG-20251003-WA0003.jpg",
+            "file": null,
+            "type": "ipv4",
+            "confidence": "medium"
+        },
+        "feed": {
+            "name": "SENTINEL Fusion Engine"
+        }
+    },
+    "sentinel": {
+        "integrity_conflict": false,
+        "visual_artefacts_detected": false,
+        "reasoning_chain": "Tidak ada data yang ditemukan di VirusTotal untuk file IMG-20251003-WA0003.jpg. Semua informasi terkait seperti jumlah vendor yang memindai, skor reputasi, kategori, dan tag tidak ditemukan. Selain itu, tidak ada artefak visual yang disediakan untuk analisis lebih lanjut. Oleh karena itu, tidak ada konflik integritas yang dapat diidentifikasi."
+    }
+}

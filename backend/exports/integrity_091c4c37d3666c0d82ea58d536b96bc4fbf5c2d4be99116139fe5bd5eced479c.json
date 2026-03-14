@@ -1,0 +1,13 @@
+{
+    "target": "091c4c37d3666c0d82ea58d536b96bc4fbf5c2d4be99116139fe5bd5eced479c",
+    "analysis_timestamp": "2026-03-13T13:47:57.978285Z",
+    "active_sources": [
+        "VirusTotal"
+    ],
+    "integrity_conflict_detected": false,
+    "conflict_count": 0,
+    "conflicts": [],
+    "aggregate_confidence": 1.0,
+    "consensus_severity": "CRITICAL",
+    "notes": "All active CTI sources are in agreement on this indicator's risk level."
+}

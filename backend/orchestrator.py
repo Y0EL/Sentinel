@@ -17,9 +17,24 @@ class SentinelCrew:
         self.current_stage = 0
 
     async def run(self, on_chunk=None):
-        # 1. Aggressive Sanitization
-        clean_id = re.sub(r'^https?://', '', self.target)
-        clean_id = re.sub(r'[^a-zA-Z0-9]', '_', clean_id).strip('_')
+        import os as _os
+        # 1. Stable clean_id from target — used for ALL export filenames
+        _base_clean = "".join([c if c.isalnum() else "_" for c in self.target]).strip("_")
+
+        # If a file with that clean_id already exists, append -1, -2, … so we never
+        # block on a locked/open PDF or overwrite a previous run's results.
+        def _versioned_id(base: str, export_dir: str) -> str:
+            candidate = _os.path.join(export_dir, f"report_{base}.pdf")
+            if not _os.path.exists(candidate):
+                return base
+            n = 1
+            while _os.path.exists(_os.path.join(export_dir, f"report_{base}-{n}.pdf")):
+                n += 1
+            return f"{base}-{n}"
+
+        _export_dir_early = _os.path.join(_os.path.dirname(__file__), "exports")
+        _os.makedirs(_export_dir_early, exist_ok=True)
+        clean_id = _versioned_id(_base_clean, _export_dir_early)
 
         # Lifecycle callback to notify agent starts/thoughts
         def step_callback(step):
@@ -99,6 +114,28 @@ class SentinelCrew:
                     if r:
                         agent_role = str(r).split()[0].upper()
 
+                # ── Normalize to standard frontend AgentKey ──────────────
+                _ROLE_MAP = {
+                    "OSINT":        "COLLECTOR",
+                    "VISUAL":       "VISUAL",
+                    "THREAT":       "FUSION",
+                    "FUSION":       "FUSION",
+                    "SIEM":         "SIEM",
+                    "SOAR":         "SIEM",
+                    "STRATEGIC":    "REPORTER",
+                    "REPORTER":     "REPORTER",
+                    "INTELLIGENCE": "REPORTER",
+                    "ANALIS":       "COLLECTOR",
+                }
+                # Exact match first, then prefix search
+                normalized = _ROLE_MAP.get(agent_role)
+                if not normalized:
+                    for k, v in _ROLE_MAP.items():
+                        if agent_role.startswith(k) or k in agent_role:
+                            normalized = v
+                            break
+                agent_role = normalized or agent_role
+
                 msg = {
                     "source": "agent",
                     "role":   agent_role,
@@ -108,6 +145,7 @@ class SentinelCrew:
                 }
                 if self.loop.is_running():
                     asyncio.run_coroutine_threadsafe(on_chunk(msg), self.loop)
+
 
             except Exception as e:
                 print(f"Error in step_callback: {e}")
@@ -124,7 +162,29 @@ class SentinelCrew:
             4: ("REPORTER",   5, "Pelaporan LIA"),
         }
 
-        task_counter = {"n": 0}
+        task_counter = {"n": 0, "active": None}
+
+        # Broadcast that the first agent is starting immediately
+        async def _notify_agent_start(role_key: str, stage_idx: int, stage_name: str):
+            if on_chunk:
+                await on_chunk({
+                    "source": "agent",
+                    "type": "AGENT_START",
+                    "role": role_key,
+                    "stage": stage_idx,
+                    "task": stage_name,
+                })
+
+        async def _notify_agent_done(role_key: str, stage_idx: int, stage_name: str, message: str):
+            if on_chunk:
+                await on_chunk({
+                    "source": "agent",
+                    "type": "AGENT_DONE",
+                    "role": role_key,
+                    "stage": stage_idx,
+                    "task": stage_name,
+                    "message": message,
+                })
 
         def _humanize_collector(raw_text: str) -> str:
             """Convert raw OSINT technical output into natural Indonesian prose."""
@@ -232,24 +292,43 @@ class SentinelCrew:
                 }
                 human_msg = DONE_TEMPLATES.get(role_key, f"Tahap {stage_name} selesai.")
 
-                # No hard truncation — let the full message through
-
-                msg = {
-                    "source": "agent",
-                    "role":   role_key,
-                    "task":   stage_name,
-                    "message": human_msg,
-                    "type":   "STEP",
-                }
+                # Broadcast AGENT_DONE with full message
                 if self.loop.is_running():
-                    asyncio.run_coroutine_threadsafe(on_chunk(msg), self.loop)
+                    asyncio.run_coroutine_threadsafe(
+                        on_chunk({
+                            "source": "agent",
+                            "type": "AGENT_DONE",
+                            "role": role_key,
+                            "stage": stage_idx,
+                            "task": stage_name,
+                            "message": human_msg,
+                        }),
+                        self.loop
+                    )
 
-                # Also advance stage indicator
+                # Advance stage indicator
                 if self.loop.is_running():
                     asyncio.run_coroutine_threadsafe(
                         on_chunk({"source": "system", "type": "PROGRESS", "stage": stage_idx + 1}),
                         self.loop
-                    )
+                )
+
+                # Notify start of NEXT agent (proactive: shows upcoming agent as active)
+                next_idx = idx + 1
+                if next_idx in TASK_ROLE_MAP:
+                    next_role, next_stage, next_name = TASK_ROLE_MAP[next_idx]
+                    if self.loop.is_running():
+                        asyncio.run_coroutine_threadsafe(
+                            on_chunk({
+                                "source": "agent",
+                                "type": "AGENT_START",
+                                "role": next_role,
+                                "stage": next_stage,
+                                "task": next_name,
+                            }),
+                            self.loop
+                        )
+
             except Exception as e:
                 print(f"Error in task_callback: {e}")
 
@@ -264,6 +343,17 @@ class SentinelCrew:
 
 
         crew_inputs = {'target': self.target, 'image_path': self.image_path or 'none'}
+
+        # Notify frontend that COLLECTOR is starting immediately
+        if on_chunk:
+            await on_chunk({
+                "source": "agent",
+                "type": "AGENT_START",
+                "role": "COLLECTOR",
+                "stage": 1,
+                "task": "Pengumpulan OSINT",
+            })
+
         result = await sentinel_crew.akickoff(inputs=crew_inputs)
         
         final_report = str(result)
@@ -293,16 +383,26 @@ class SentinelCrew:
                     except Exception as parse_err:
                         print(f"WARN: Fallback JSON parse also failed: {parse_err}")
 
+        # clean_id already defined above (single source of truth)
         risk: str = "INFO"
         conflict: bool = False
         fusion_details: dict[str, Any] = {}
         reasoning_text: str = final_report
 
+
         if fusion_data is not None:
-            risk = fusion_data.risk_score
-            conflict = fusion_data.integrity_conflict
-            fusion_details = fusion_data.model_dump()
-            reasoning_text = fusion_data.reasoning
+            # If fusion_data is the Pydantic model (FusionResult)
+            if hasattr(fusion_data, "model_dump"):
+                risk = fusion_data.risk_score
+                conflict = fusion_data.integrity_conflict
+                fusion_details = fusion_data.model_dump()
+                reasoning_text = fusion_data.reasoning
+            # If it's a raw dict from fallback parsing
+            elif isinstance(fusion_data, dict):
+                risk = fusion_data.get("risk_score", "INFO")
+                conflict = fusion_data.get("integrity_conflict", False)
+                fusion_details = fusion_data
+                reasoning_text = fusion_data.get("reasoning", final_report)
 
         import os
         export_dir = os.path.join(os.path.dirname(__file__), "exports")
@@ -313,6 +413,22 @@ class SentinelCrew:
         report_path = os.path.join(export_dir, report_filename)
         siem_path = os.path.join(export_dir, siem_filename)
 
+        # Determine IoC type for SIEM exporter
+        from intelligence_collector import _detect_type as _det
+        ioc_t = _det(self.target)
+        ioc_type_map = {"ip": "ipv4", "domain": "domain",
+                        "sha256": "sha256", "md5": "md5", "sha1": "sha1"}
+        ecs_ioc_type = ioc_type_map.get(ioc_t, "unknown")
+
+        # Pull feed-level data from fusion_details if available
+        active_sources  = fusion_details.get("active_sources") or []
+        conflict_list   = fusion_details.get("conflict_details") or []
+
+        soar_filename       = f"soar_{clean_id}.md"
+        integrity_filename  = f"integrity_{clean_id}.json"
+        soar_path       = os.path.join(export_dir, soar_filename)
+        integrity_path  = os.path.join(export_dir, integrity_filename)
+
         try:
             report_gen = ReportGenerator(report_path)
             report_gen.generate({
@@ -321,26 +437,87 @@ class SentinelCrew:
                 "analysis": final_report,
                 "fusion_details": fusion_details
             })
-            
+        except PermissionError:
+            print(f"ERROR: Permission denied on {report_path}. PLEASE CLOSE THE PDF VIEWER.")
+        except Exception as e:
+            import traceback
+            print(f"FAILED TO GENERATE REPORT: {e}")
+            print(traceback.format_exc())
+
+        try:
             siem = SIEMExporter()
+
             alert = siem.to_ecs({
-                "ip": self.target if "." in self.target else None,
-                "hash": self.target if "." not in self.target else None,
-                "ioc_type": "ipv4" if "." in self.target else "hash",
+                "ip":     self.target if ioc_t == "ip" else None,
+                "hash":   self.target if ioc_t in ("sha256","md5","sha1") else None,
+                "domain": self.target if ioc_t == "domain" else None,
+                "ioc_type": ecs_ioc_type,
                 "integrity_conflict": conflict,
+                "integrity_conflicts": conflict_list,
                 "reasoning": reasoning_text,
-                "severity": risk
+                "severity": risk,
+                "active_sources": active_sources,
+                "confidence_score": fusion_details.get("confidence_score", 0.5),
             })
             siem.save_json(alert, siem_path)
+
+            # ── D3 Deliverable: Standalone SOAR Playbook (.md) ──────────────
+            playbook_md = siem.generate_soar_playbook(
+                target=self.target,
+                risk_score=risk,
+                integrity_conflict=conflict,
+                active_sources=active_sources,
+                ttps=fusion_details.get("mitre_techniques") or [],
+                conflict_details=conflict_list,
+            )
+            with open(soar_path, "w", encoding="utf-8") as pf:
+                pf.write(playbook_md)
+            print(f"INFO: SOAR Playbook saved → {soar_path}")
+
+            # ── D3 Deliverable: Integrity Report (.json) ────────────────────
+            import json as _json
+            from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+            _WIB = _tz(_td(hours=7))
+            integrity_report = {
+                "target": self.target,
+                "analysis_timestamp": _dt.now(_WIB).strftime("%d-%b-%Y %H:%M WIB"),
+                "active_sources": active_sources,
+                "integrity_conflict_detected": conflict,
+                "conflict_count": len(conflict_list),
+                "conflicts": conflict_list,
+                "aggregate_confidence": fusion_details.get("confidence_score", 0.5),
+                "consensus_severity": risk,
+                "notes": (
+                    "Integrity conflicts represent disagreements between CTI feed severity assessments. "
+                    "They do NOT automatically elevate or reduce risk — analyst review required."
+                    if conflict else
+                    "All active CTI sources are in agreement on this indicator's risk level."
+                ),
+            }
+            with open(integrity_path, "w", encoding="utf-8") as ir:
+                _json.dump(integrity_report, ir, indent=4, ensure_ascii=False)
+            print(f"INFO: Integrity Report saved → {integrity_path}")
+
         except Exception as e:
-            print(f"FAILED TO GENERATE ARTIFACTS: {e}")
-        
+            import traceback
+            print(f"FAILED TO GENERATE SIEM/SOAR/INTEGRITY ARTIFACTS: {e}")
+            print(traceback.format_exc())
+            # Ensure files always exist even if empty / error
+            for p in [siem_path, soar_path, integrity_path]:
+                if not os.path.exists(p):
+                    try:
+                        with open(p, "w", encoding="utf-8") as _f:
+                            _f.write("{\"error\": \"Generation failed\", \"target\": \"" + self.target + "\"}" if p.endswith(".json") else f"# Error generating {p}")
+                    except Exception: pass
+
         return {
-            "raw_result": final_report,
-            "report_file": report_filename,
-            "siem_file": siem_filename,
-            "risk_score": risk,
-            "integrity_conflict": conflict
+            "raw_result":        final_report,
+            "report_file":       report_filename,
+            "siem_file":         siem_filename,
+            "soar_file":         soar_filename,
+            "integrity_file":    integrity_filename,
+            "risk_score":        risk,
+            "integrity_conflict": conflict,
         }
 
 if __name__ == "__main__":

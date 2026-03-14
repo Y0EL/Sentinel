@@ -1,0 +1,15 @@
+{
+    "target": "0b9bbcbec8752387ef430c1543a45b788c1bd924977ecef0086b213f6dbce30d",
+    "analysis_timestamp": "14-Mar-2026 11:21 WIB",
+    "active_sources": [
+        "VirusTotal",
+        "MalwareBazaar",
+        "URLhaus"
+    ],
+    "integrity_conflict_detected": false,
+    "conflict_count": 0,
+    "conflicts": [],
+    "aggregate_confidence": 0.803,
+    "consensus_severity": "CRITICAL",
+    "notes": "All active CTI sources are in agreement on this indicator's risk level."
+}

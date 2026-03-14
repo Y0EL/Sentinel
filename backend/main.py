@@ -152,6 +152,8 @@ async def run_sentinel_task(target: str, image_path: Optional[str] = None):
             "target": target,
             "report_file": crew_result.get("report_file"),
             "siem_file": crew_result.get("siem_file"),
+            "soar_file": crew_result.get("soar_file"),
+            "integrity_file": crew_result.get("integrity_file"),
             "integrity_conflict": crew_result.get("integrity_conflict") or False,
             "risk_score": crew_result.get("risk_score") or "INFO",
         }
@@ -195,3 +197,52 @@ async def websocket_logs(websocket: WebSocket):
         pass
     finally:
         broadcaster.disconnect(websocket)
+
+
+# ── Consolidated Multi-TC Report ────────────────────────────────────────────────
+class ConsolidateRequest(BaseModel):
+    targets: list[str]   # e.g. ["8.8.8.8", "1.1.1.1", "0b9bbc..."]
+    title: Optional[str] = "Laporan Konsolidasi Ancaman SENTINEL"
+
+@app.post("/consolidate")
+async def consolidate_reports(req: ConsolidateRequest):
+    """
+    Merge multiple already-completed analyses into one combined PDF report.
+    Returns { consolidated_file: "consolidated_<ts>.pdf", targets: [...], count: N }
+    """
+    from reporting import ConsolidatedReportGenerator
+    from datetime import datetime, timezone, timedelta
+
+    WIB = timezone(timedelta(hours=7))
+    ts  = datetime.now(WIB).strftime("%Y%m%d_%H%M%S")
+    out_filename = f"consolidated_{ts}.pdf"
+    out_path     = os.path.join(export_path, out_filename)
+
+    cases: list[dict] = []
+    for t in req.targets:
+        result = task_results.get(t)
+        if result and result.get("status") == "completed":
+            cases.append({
+                "target":             t,
+                "risk_score":         result.get("risk_score", "INFO"),
+                "analysis":           result.get("result", ""),
+                "integrity_conflict": result.get("integrity_conflict", False),
+            })
+        else:
+            cases.append({
+                "target":     t,
+                "risk_score": "INFO",
+                "analysis":   f"Tidak ada data analisis untuk target ini (belum dijalankan atau masih proses).",
+                "integrity_conflict": False,
+            })
+
+    gen = ConsolidatedReportGenerator(out_path)
+    gen.generate({"title": req.title, "cases": cases})
+
+    return {
+        "consolidated_file": out_filename,
+        "targets": req.targets,
+        "count":   len(cases),
+        "status":  "ok",
+    }
+

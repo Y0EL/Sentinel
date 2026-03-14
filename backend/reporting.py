@@ -10,7 +10,7 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
 from reportlab.platypus import BaseDocTemplate, PageTemplate, Frame
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 
 # ─── Colour palette ────────────────────────────────────────────────────────────
@@ -177,7 +177,8 @@ class ReportGenerator:
         risk_color = RISK_PALETTE.get(risk_score, ACCENT_BLUE)
         risk_label = RISK_LABEL_ID.get(risk_score, risk_score)
         target     = data.get("target", "Unknown")
-        ts         = datetime.now().strftime("%d %B %Y, %H:%M WIB")
+        WIB = timezone(timedelta(hours=7))
+        ts         = datetime.now(WIB).strftime("%d %B %Y, %H:%M WIB")
         analysis   = _sanitize_text(data.get("analysis", ""))
 
         elements = []
@@ -272,3 +273,162 @@ class ReportGenerator:
 
         doc.build(elements, onFirstPage=self._header_footer, onLaterPages=self._header_footer)
         return self.filename
+
+
+# ─── Consolidated Multi-TC Report Generator ───────────────────────────────────
+class ConsolidatedReportGenerator:
+    """Merges multiple per-target analyses into a single combined PDF."""
+
+    def __init__(self, filename="consolidated_report.pdf"):
+        self.filename = filename
+
+    @staticmethod
+    def _header_footer(canvas, doc):
+        ReportGenerator._header_footer(canvas, doc)
+
+    def generate(self, data: dict) -> str:
+        from datetime import datetime, timezone, timedelta
+        WIB   = timezone(timedelta(hours=7))
+        ts    = datetime.now(WIB).strftime("%d %B %Y, %H:%M WIB")
+        title = data.get("title", "Laporan Konsolidasi Ancaman SENTINEL")
+        cases: list = data.get("cases", [])
+
+        doc = SimpleDocTemplate(
+            self.filename,
+            pagesize=LETTER,
+            topMargin=0.9 * inch, bottomMargin=0.9 * inch,
+            leftMargin=0.85 * inch, rightMargin=0.85 * inch,
+        )
+        base = getSampleStyleSheet()
+        S = ReportGenerator(self.filename)._build_styles()
+
+        elements = []
+
+        # ── COVER ──────────────────────────────────────────────────────────────
+        cover_sub_style = ParagraphStyle(
+            "CovSubC", parent=base["Normal"],
+            fontSize=8.5, textColor=colors.HexColor("#94a3b8"),
+            alignment=TA_CENTER, spaceAfter=0, fontName="Helvetica",
+        )
+        cc = Table(
+            [[Paragraph("SENTINEL", S["cover_title"])],
+             [Paragraph("Laporan Konsolidasi Intelijen Ancaman", cover_sub_style)]],
+            colWidths=["*"]
+        )
+        cc.setStyle(TableStyle([("ALIGN", (0,0), (-1,-1), "CENTER"),
+                                ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+                                ("PADDING",(0,0),(-1,-1),4)]))
+        cw = Table([[cc]], colWidths=["*"])
+        cw.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,-1),DARK),
+                                ("PADDING",(0,0),(-1,-1),20),
+                                ("ALIGN",(0,0),(-1,-1),"CENTER")]))
+        elements.append(cw)
+        elements.append(Spacer(1, 14))
+
+        # ── METADATA ────────────────────────────────────────────────────────────
+        col_w = [2.1 * inch, 4.5 * inch]
+        def mrow(label, val):
+            return [Paragraph(f"<b>{label}</b>", S["label"]),
+                    Paragraph(val, S["body"])]
+
+        meta = Table([
+            mrow("Judul Laporan:", title),
+            mrow("Jumlah Kasus:", str(len(cases))),
+            mrow("Tanggal & Waktu:", ts),
+            mrow("Klasifikasi:", "TLP:RED / Rahasia"),
+            mrow("Dibuat Oleh:", "SENTINEL AI Fusion  ·  Divalidasi SOC Manual"),
+        ], colWidths=col_w)
+        meta.setStyle(TableStyle([
+            ("BACKGROUND",(0,0),(-1,-1),LIGHT_BG),
+            ("GRID",(0,0),(-1,-1),0.4,BORDER),
+            ("PADDING",(0,0),(-1,-1),8),
+            ("VALIGN",(0,0),(-1,-1),"TOP"),
+        ]))
+        elements.append(meta)
+        elements.append(Spacer(1, 14))
+
+        # ── RISK OVERVIEW TABLE ─────────────────────────────────────────────────
+        elements.append(Paragraph("Ikhtisar Multi-Target", S["section_h"]))
+        elements.append(Spacer(1, 6))
+        header_row = [
+            Paragraph("<b>#</b>", S["label"]),
+            Paragraph("<b>Target</b>", S["label"]),
+            Paragraph("<b>Skor Risiko</b>", S["label"]),
+            Paragraph("<b>Konflik</b>", S["label"]),
+        ]
+        rows = [header_row]
+        for i, case in enumerate(cases, 1):
+            rsc  = RISK_PALETTE.get(case.get("risk_score","INFO").upper(), ACCENT_BLUE)
+            lbl  = RISK_LABEL_ID.get(case.get("risk_score","INFO").upper(), case.get("risk_score","INFO"))
+            conflict_str = "⚠ YA" if case.get("integrity_conflict") else "Tidak"
+            rows.append([
+                Paragraph(str(i), S["body"]),
+                Paragraph(case.get("target","—"), S["body"]),
+                Paragraph(f'<font color="{rsc.hexval()}"><b>{lbl}</b></font>', S["body"]),
+                Paragraph(conflict_str, S["body"]),
+            ])
+        ov_table = Table(rows, colWidths=[0.4*inch, 3.0*inch, 1.5*inch, 1.5*inch])
+        ov_table.setStyle(TableStyle([
+            ("BACKGROUND",(0,0),(-1,0),DARK),
+            ("TEXTCOLOR",(0,0),(-1,0),WHITE),
+            ("GRID",(0,0),(-1,-1),0.4,BORDER),
+            ("BACKGROUND",(0,1),(-1,-1),LIGHT_BG),
+            ("PADDING",(0,0),(-1,-1),7),
+            ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+        ]))
+        elements.append(ov_table)
+        elements.append(Spacer(1, 20))
+        elements.append(HRFlowable(width="100%", thickness=0.5, color=BORDER))
+
+        # ── PER-CASE SECTIONS ───────────────────────────────────────────────────
+        for i, case in enumerate(cases, 1):
+            elements.append(Spacer(1, 18))
+            risk_score = case.get("risk_score", "INFO").upper()
+            risk_color = RISK_PALETTE.get(risk_score, ACCENT_BLUE)
+            risk_label = RISK_LABEL_ID.get(risk_score, risk_score)
+            target_str = case.get("target", "Unknown")
+
+            elements.append(Paragraph(
+                f"<b>Kasus {i} — {target_str}</b>",
+                S["section_h"]
+            ))
+            elements.append(Paragraph(
+                f'Tingkat Risiko: <font color="{risk_color.hexval()}"><b>{risk_label}</b></font>  |  '
+                f'Konflik Integritas: {"⚠ Ya" if case.get("integrity_conflict") else "Tidak"}',
+                S["body"]
+            ))
+            elements.append(Spacer(1, 8))
+
+            analysis = _sanitize_text(case.get("analysis", ""))
+            if analysis:
+                for line in analysis.split("\n"):
+                    line_s = line.strip()
+                    if not line_s:
+                        elements.append(Spacer(1, 5))
+                    elif line_s.startswith("### "):
+                        elements.append(Paragraph(_md_bold(line_s[4:]), S["sub_h"]))
+                    elif line_s.startswith("## ") or line_s.startswith("# "):
+                        n = 3 if line_s.startswith("## ") else 2
+                        elements.append(Paragraph(_md_bold(line_s[n:]), S["section_h"]))
+                    elif line_s.startswith("- ") or line_s.startswith("* "):
+                        elements.append(Paragraph("• " + _md_bold(line_s[2:]), S["bullet"]))
+                    else:
+                        elements.append(Paragraph(_md_bold(line_s), S["body"]))
+            else:
+                elements.append(Paragraph("Tidak ada konten analisis.", S["body"]))
+
+            elements.append(Spacer(1, 12))
+            elements.append(HRFlowable(width="100%", thickness=0.4, color=BORDER))
+
+        # ── DISCLAIMER ──────────────────────────────────────────────────────────
+        elements.append(Spacer(1, 20))
+        elements.append(Paragraph(
+            "Laporan konsolidasi ini dihasilkan secara otomatis oleh SENTINEL AI Fusion Platform. "
+            "Setiap tindakan respons insiden harus divalidasi oleh operator SOC manusia sesuai SOP. "
+            "Dilarang menyebarluaskan tanpa izin PT Gemilang Satria Perkasa.",
+            S["disclaimer"]
+        ))
+
+        doc.build(elements, onFirstPage=self._header_footer, onLaterPages=self._header_footer)
+        return self.filename
+

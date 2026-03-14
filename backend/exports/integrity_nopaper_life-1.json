@@ -1,0 +1,13 @@
+{
+    "target": "nopaper.life",
+    "analysis_timestamp": "14-Mar-2026 20:42 WIB",
+    "active_sources": [
+        "VirusTotal"
+    ],
+    "integrity_conflict_detected": false,
+    "conflict_count": 0,
+    "conflicts": [],
+    "aggregate_confidence": 0.15,
+    "consensus_severity": "INFO",
+    "notes": "All active CTI sources are in agreement on this indicator's risk level."
+}

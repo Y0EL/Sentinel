@@ -1,0 +1,9 @@
+{
+    "8.8.8.8": {
+        "status": "ok",
+        "severity_assessment": "CRITICAL",
+        "key_finding": "Fake Threat Intel: Sinyal C2 aktif terdeteksi dari botnet Mirai varian baru (Fiktif untuk TC3)",
+        "confidence_weight": 0.95,
+        "timestamp": "2026-03-13T13:50:00Z"
+    }
+}

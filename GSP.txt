@@ -1,0 +1,573 @@
+PT GEMILANG SATRIA PERKASA
+Jl. Bangka Raya No.27 Pela Mampang, Jakarta Selatan 12720
+Tel: (021) 22715320 | www.gemilangsatriaperkasa.co.id
+
+DOKUMEN RAHASIA
+
+TECHNICAL ASSESSMENT TASK
+
+SENTINEL — Cyber Threat Intelligence & Fusion Platform
+Agentic AI | OSINT | Computer Vision | SIEM-SOAR Integration
+PT Gemilang Satria Perkasa | Seleksi Teknikal Tahap II
+
+Kandidat
+
+Yoel Andreas Manoppo
+
+Posisi Dilamar
+
+AI Solutions Architect / Forward Deployed AI Engineer (FDE)
+
+Nomor Dokumen
+
+004/GSP/TA/AIE/III/2026
+
+Tanggal Diterbitkan
+
+13 Maret 2026
+
+Batas Waktu
+Submission
+
+15 Maret 2026 | 23:59 WIB (2 Hari Kerja)
+
+Kontak Evaluator
+
+HRD - PT Gemilang Satria Perkasa
+
+1. LATAR BELAKANG & KONTEKS PENUGASAN
+PT Gemilang Satria Perkasa sedang mengembangkan platform SENTINEL — sebuah sistem
+intelijen ancaman siber (Cyber Threat Intelligence / CTI) berbasis AI yang dirancang untuk
+mendukung operasi deteksi, analisis, dan respons terhadap ancaman digital secara terpadu.
+Platform ini menjadi tulang punggung kapabilitas keamanan siber klien pemerintah dan pertahanan
+GSP, dan membutuhkan integrasi empat lapisan teknologi secara kohesif.
+Modul inti yang sedang dikembangkan adalah Threat Intelligence Fusion Engine — sebuah pipeline
+otomatis yang mampu:
+•
+•
+•
+•
+•
+
+Mengumpulkan indikator ancaman (IoC) dari sumber terbuka: feed OSINT, dark web surface
+layer, repositori CVE, dan laporan insiden publik
+Menganalisis dan mengkorelasikan ancaman menggunakan agen AI yang dapat bernalar
+tentang konteks, urgensi, dan dampak secara dinamis
+Memproses artefak visual dari investigasi insiden: screenshot malware, image dari threat
+feed, tangkapan layar forum underground
+Mengintegrasikan temuan ke dalam format SIEM/SOAR yang dapat langsung dieksekusi
+oleh tim SOC
+Menghasilkan laporan intelijen ancaman terstruktur yang dapat diaudit dan dibaca oleh
+decision maker non-teknikal
+
+Penugasan ini dirancang untuk mengevaluasi kemampuan Anda dalam merancang dan
+mengimplementasikan pipeline tersebut dari nol dalam kondisi terbatas waktu — persis seperti
+situasi nyata yang akan dihadapi sebagai FDE di PT GSP.
+
+PT Gemilang Satria Perkasa | Divisi Rekrutmen & SDMDokumen Internal — Tidak untuk Disebarluaskan
+
+Halaman 1
+
+PT GEMILANG SATRIA PERKASA
+
+DOKUMEN RAHASIA
+
+Jl. Bangka Raya No.27 Pela Mampang, Jakarta Selatan 12720
+Tel: (021) 22715320 | www.gemilangsatriaperkasa.co.id
+
+2. DESKRIPSI TUGAS
+2.1 Judul Proyek
+
+SENTINEL — Cyber Threat Intelligence & Fusion Platform
+2.2 Ringkasan Tugas
+Anda diminta untuk membangun sebuah pipeline end-to-end yang menerima input berupa threat
+identifier (IP address, domain, hash file, atau nama aktor ancaman), kemudian secara otomatis
+mengumpulkan dan menganalisis data dari berbagai sumber intelijen ancaman, memproses artefak
+visual yang relevan, dan menghasilkan Laporan Intelijen Ancaman (LIA) beserta output
+SIEM/SOAR-ready dalam format terstruktur.
+Ekspektasi baseline kami adalah sistem yang mampu memproses minimal 3 threat case secara
+berurutan dan menghasilkan satu laporan konsolidasi — namun kami sangat terbuka jika Anda
+melihat ruang untuk melakukan lebih dari itu.
+
+2.3 Dataset — Anda yang Menyiapkan
+Kami tidak menyediakan dataset. Anda bebas menentukan dan menyiapkan sendiri threat case
+yang akan digunakan — dari sumber intelijen ancaman yang legal dan tersedia secara publik:
+repositori VirusTotal publik, AlienVault OTX, Abuse.ch, CVE database, laporan APT publik dari
+vendor keamanan, atau threat feed open-source lainnya.
+Yang wajib dipenuhi adalah komposisi skenario berikut — pastikan setidaknya tiga threat case yang
+Anda pilih mencakup ketiga kondisi ini:
+#
+
+Skenario
+
+Persyaratan Konten
+
+Aspek yang Diuji
+
+TC1
+
+Ancaman
+Terdokumentasi
+(Kondisi Normal)
+
+Threat case dengan data IoC yang
+kaya dan terdokumentasi: IP/domain
+yang tercatat di multiple threat feed,
+malware hash dengan laporan
+analisis publik, atau kampanye APT
+yang sudah dipublikasikan. Minimal
+terdapat dua sumber independen
+yang dapat dikorelasikan.
+
+Baseline kemampuan CTI
+collection, IoC enrichment, entity
+correlation, dan narasi ancaman
+pada kondisi data ideal.
+
+TC2
+
+Ancaman Ambigu
+(Kondisi
+Tantangan)
+
+Threat case dengan data sparse atau
+sinyal lemah: IP yang hanya muncul di
+satu feed dengan confidence rendah,
+domain baru terdaftar tanpa riwayat,
+atau hash file yang belum ada laporan
+analisisnya. Pipeline harus
+menangani ketidakpastian dan
+mengestimasi risk level secara
+eksplisit.
+
+Ketahanan pipeline terhadap
+kondisi data non-ideal. Penilaian
+kemampuan uncertainty
+quantification dan risk scoring
+dalam kondisi informasi terbatas.
+
+TC3
+
+Integrity Trap —
+Wajib Anda
+Siapkan Sendiri
+
+Buat atau siapkan sumber data CTI
+publik yang mengandung SENGAJA
+inkonsistensi: misalnya dua feed yang
+melaporkan severity berbeda untuk
+IoC yang sama, atau atribusi aktor
+ancaman yang saling bertentangan
+antar sumber. Dokumentasikan
+inkonsistensi yang Anda masukkan.
+
+Sistem Anda WAJIB mendeteksi,
+menandai, dan melaporkan
+konflik intelijen ini. Ini
+membuktikan kemampuan crossfeed validation dan adversarial
+data handling berjalan.
+
+PT Gemilang Satria Perkasa | Divisi Rekrutmen & SDMDokumen Internal — Tidak untuk Disebarluaskan
+
+Halaman 1
+
+PT GEMILANG SATRIA PERKASA
+Jl. Bangka Raya No.27 Pela Mampang, Jakarta Selatan 12720
+Tel: (021) 22715320 | www.gemilangsatriaperkasa.co.id
+
+DOKUMEN RAHASIA
+
+3. EKSPEKTASI TEKNIS & RUANG EKSPLORASI
+Berikut adalah gambaran tentang apa yang kami harapkan ada dalam sistem Anda — bukan
+sebagai checklist yang membatasi, melainkan sebagai titik awal. Jika Anda melihat cara yang lebih
+baik, pendekatan yang lebih elegan, atau kapabilitas tambahan yang relevan dengan konteks ini,
+kami sangat mendorong Anda untuk memasukkannya. Penilaian kami menghargai kreativitas teknis
+yang terargumentasi sama tingginya dengan pemenuhan baseline.
+
+3.1 Ekspektasi Baseline
+A. OSINT & Threat Intelligence Collection Pipeline
+•
+
+Sistem menerima input threat identifier (IP, domain, file hash, aktor) melalui CLI atau API
+endpoint
+
+•
+
+Pengumpulan data otomatis dari minimal dua sumber CTI publik: AlienVault OTX, Abuse.ch,
+VirusTotal API publik, CIRCL CVE, atau feed STIX/TAXII open-source
+Ekstraksi IoC terstruktur: IP address, domain, URL, file hash (MD5/SHA-256), CVE ID, TTPs
+(taktik, teknik, prosedur)
+Pemetaan otomatis ke framework MITRE ATT&CK: identifikasi tactic, technique, dan subtechnique yang relevan dari data yang dikumpulkan
+
+•
+•
+•
+
+Penanganan rate-limiting, sumber tidak responsif, dan data kosong secara graceful
+
+B. Agentic AI Orchestration Layer
+• Implementasi minimal satu agentic loop: agen yang dapat merencanakan langkah
+pengumpulan dan analisis, mengevaluasi hasilnya, dan memutuskan langkah investigasi
+berikutnya secara dinamis
+• Pembagian peran agen yang terdefinisi: Collector Agent (pengumpulan IoC), Analyst Agent
+(korelasi dan penilaian risiko), SOAR Agent (pembuatan respons action), dan Report Agent
+(narasi final)
+• Setiap agen mendokumentasikan reasoning chain-nya: keputusan apa yang diambil,
+mengapa, dan dengan confidence level berapa
+• Gunakan framework yang Anda anggap paling tepat: LangChain, LlamaIndex, AutoGen,
+CrewAI, atau implementasi custom — jelaskan pertimbangannya
+C. Computer Vision — Visual Artefact Analysis
+• Integrasi modul computer vision untuk memproses artefak visual dari threat case:
+screenshot malware, gambar dari laporan ancaman, atau visual dari forum underground
+yang tersedia publik
+• Ekstraksi konten dari gambar: deteksi teks (OCR untuk IP, domain, hash), identifikasi logo
+atau branding tool berbahaya, klasifikasi jenis artefak
+•
+•
+
+Gunakan VLM (Vision Language Model) untuk menghasilkan deskripsi naratif dari konten
+visual — kontekstualisasikan temuan visual dalam narasi ancaman
+Korelasikan temuan visual dengan data IoC teks: apakah gambar mengkonfirmasi,
+memperluas, atau mempertanyakan klaim ancaman yang dikumpulkan
+
+D. SIEM/SOAR Integration & Alert Generation
+• Konversi temuan pipeline ke format yang dapat dikonsumsi SIEM: minimal output dalam
+format JSON terstruktur dengan field severity, confidence, affected_assets,
+recommended_actions
+• Pembuatan SOAR playbook draft otomatis: berdasarkan TTPs yang teridentifikasi, sistem
+menghasilkan draft langkah respons insiden yang dapat diadaptasi operator SOC
+• Pemetaan severity menggunakan skala standar (Critical/High/Medium/Low/Informational)
+dengan justifikasi berbasis data
+
+PT Gemilang Satria Perkasa | Divisi Rekrutmen & SDMDokumen Internal — Tidak untuk Disebarluaskan
+
+Halaman 1
+
+PT GEMILANG SATRIA PERKASA
+Jl. Bangka Raya No.27 Pela Mampang, Jakarta Selatan 12720
+Tel: (021) 22715320 | www.gemilangsatriaperkasa.co.id
+
+•
+
+DOKUMEN RAHASIA
+
+Output harus dapat langsung di-ingest ke platform SIEM populer (Elastic SIEM, Splunk, atau
+IBM QRadar) — dokumentasikan format yang Anda pilih dan alasannya
+
+E. Cross-Feed Validation & Integrity Checker
+• Komparasi otomatis data dari berbagai feed CTI untuk mendeteksi konflik: perbedaan
+severity, atribusi, atau klasifikasi untuk IoC yang sama
+•
+•
+•
+
+Kalkulasi confidence score per klaim berdasarkan jumlah feed yang mengkonfirmasi dan
+reputasi sumber
+Provenance trail lengkap: setiap fakta dalam laporan harus dapat dilacak ke sumber asalnya
+beserta timestamp pengambilan data
+Dokumentasikan setiap konflik intelijen secara eksplisit — jangan ratakan perbedaan,
+tampilkan sebagai informasi bagi analis
+
+F. Laporan Intelijen Ancaman (LIA) Generator
+•
+
+Output berupa dokumen (PDF atau DOCX) yang terstruktur dan dapat dicetak
+
+•
+
+Konsolidasikan temuan dari semua threat case menjadi satu laporan naratif dengan profil
+ancaman per-case
+Cakup setidaknya: executive summary, threat landscape overview, profil IoC & TTPs, peta
+relasi ancaman, konflik intelijen terdeteksi, risk assessment, dan rekomendasi mitigasi
+
+•
+•
+
+Bahasa laporan: Bahasa Indonesia formal
+
+3.2 Ruang Eksplorasi — Tidak Ada Batas Atas
+Ekspektasi di atas adalah lantai, bukan langit-langit. Kami tahu latar belakang Anda — jika Anda
+ingin menunjukkan lebih, silakan. Beberapa arah yang menurut kami menarik dalam konteks ini,
+tapi sekali lagi ini bukan daftar yang harus Anda ikuti:
+•
+•
+•
+•
+•
+•
+•
+
+Graf relasi ancaman interaktif: visualisasi koneksi antar IoC, aktor, kampanye, dan TTPs
+dalam bentuk knowledge graph (NetworkX, Neo4j, atau D3.js)
+STIX 2.1 output: ekspor temuan dalam format STIX Bundle yang dapat langsung di-share ke
+platform CTI lain via TAXII
+Temporal threat analysis: rekonstruksi timeline kampanye ancaman berdasarkan first seen /
+last seen dari berbagai feed
+Komparasi performa LLM/VLM pada task analisis ancaman yang sama — tunjukkan
+perbedaan kualitas reasoning secara empiris
+REST API endpoint agar pipeline dapat diintegrasikan sebagai CTI microservice ke platform
+keamanan yang lebih besar
+Pendekatan multi-agen paralel dengan task decomposition untuk mempercepat investigasi
+multi-threat secara simultan
+Apapun yang menurut Anda menambah nilai nyata pada sistem CTI ini
+
+PT Gemilang Satria Perkasa | Divisi Rekrutmen & SDMDokumen Internal — Tidak untuk Disebarluaskan
+
+Halaman 1
+
+PT GEMILANG SATRIA PERKASA
+Jl. Bangka Raya No.27 Pela Mampang, Jakarta Selatan 12720
+Tel: (021) 22715320 | www.gemilangsatriaperkasa.co.id
+
+DOKUMEN RAHASIA
+
+4. APA YANG DINILAI — DIMENSI EVALUASI
+Evaluasi dilakukan secara menyeluruh terhadap produk yang Anda hasilkan. Berikut adalah
+breakdown dimensi penilaian yang akan digunakan oleh tim evaluator GSP:
+
+No
+
+Dimensi Evaluasi
+
+Aspek yang Dinilai
+
+Bobot
+
+1
+
+CTI Engineering
+Mindset
+
+Apakah sistem menangani provenance,
+confidence scoring, dan konflik intelijen secara
+eksplisit? Apakah kandidat memahami bahwa
+dalam konteks CTI, setiap inkonsistensi feed
+harus didokumentasikan dan bukan diratakan?
+Apakah output dapat diverifikasi dan diaudit?
+
+25%
+
+2
+
+Agentic AI
+Architecture Quality
+
+Kualitas desain multi-agen: pembagian peran
+yang logis, reasoning chain terdokumentasi,
+kemampuan menangani kegagalan dan data
+ambigu. Apakah arsitektur scalable dan dapat
+diextend untuk threat type baru?
+
+25%
+
+3
+
+CV & SIEM/SOAR
+Integration
+
+Kualitas integrasi visual artefact analysis: apakah
+temuan CV memperkaya analisis ancaman?
+Kualitas output SIEM/SOAR: apakah format dapat
+langsung dikonsumsi platform SOC? Apakah
+severity mapping dan playbook draft bermakna
+secara operasional?
+
+20%
+
+4
+
+Kualitas Laporan
+Output (LIA)
+
+Apakah laporan akhir berguna bagi decision
+maker? Terstruktur, jelas, dan informatif? Apakah
+risk assessment dan rekomendasi mitigasi
+actionable? Dapat dibaca oleh non-technical
+audience?
+
+15%
+
+5
+
+Arsitektur & Code
+Quality
+
+Modularitas kode, dokumentasi, penanganan
+error, kemudahan deployment. Apakah arsitektur
+dapat di-maintain dan di-extend untuk integrasi
+feed CTI baru?
+
+10%
+
+6
+
+Anti-Cheat Detection
+(TC3 Trap)
+
+Apakah sistem mendeteksi dan melaporkan
+konflik intelijen pada TC3? Penilaian biner:
+terdeteksi = nilai penuh, tidak terdeteksi = penalti.
+
+5%
+
+PT Gemilang Satria Perkasa | Divisi Rekrutmen & SDMDokumen Internal — Tidak untuk Disebarluaskan
+
+Halaman 1
+
+PT GEMILANG SATRIA PERKASA
+Jl. Bangka Raya No.27 Pela Mampang, Jakarta Selatan 12720
+Tel: (021) 22715320 | www.gemilangsatriaperkasa.co.id
+
+DOKUMEN RAHASIA
+
+5. DELIVERABLES — APA YANG HARUS DIKUMPULKAN
+#
+
+Deliverable
+
+Deskripsi
+
+Bobot
+
+D1
+
+Source Code
+Repository
+
+Link GitHub/GitLab public atau zip file. Wajib ada
+README.md dengan instruksi menjalankan
+pipeline termasuk cara menyiapkan threat case
+sesuai spesifikasi Seksi 2.3.
+
+30%
+
+D2
+
+Output Laporan (LIA)
+
+File PDF atau DOCX hasil run pipeline terhadap 3
+threat case yang Anda siapkan. Ini adalah bukti
+sistem Anda bekerja nyata — bukan placeholder
+atau output simulasi.
+
+30%
+
+D3
+
+SIEM/SOAR Output &
+Integrity Report
+
+File JSON SIEM-ready dan draft SOAR playbook
+dari ketiga threat case, beserta dokumentasi
+cross-feed validation results dan temuan konflik
+intelijen — termasuk dokumentasi manipulasi
+data yang Anda lakukan pada TC3.
+
+15%
+
+D4
+
+Technical Write-up
+
+Dokumen 1–2 halaman berisi: arsitektur multiagen yang dipilih, justifikasi pemilihan model
+LLM/VLM, justifikasi format SIEM/SOAR,
+bagaimana Anda menyiapkan TC3, keterbatasan
+sistem, dan rekomendasi pengembangan
+selanjutnya.
+
+15%
+
+D5
+
+Video Demo
+
+Screencast 3–5 menit menunjukkan pipeline
+berjalan end-to-end. Wajib menampilkan: deteksi
+konflik intelijen TC3 secara live, dan contoh
+output SIEM-ready yang dihasilkan.
+
+10%
+
+6. BATASAN & ATURAN PENGERJAAN
+6.1 Yang Diperbolehkan
+•
+•
+
+Menggunakan library open source apapun (Scrapy, MISP, OpenCTI client, OpenCV,
+LangChain, CrewAI, AutoGen, Elastic client, dll.)
+Menggunakan API publik gratis atau berbayar (VirusTotal free tier, AlienVault OTX,
+Abuse.ch, Shodan, OpenAI, Anthropic, Google Gemini) — biaya ditanggung kandidat
+
+•
+
+Menggunakan model lokal via Ollama atau framework serupa
+
+•
+
+Menggunakan Google Colab atau cloud environment untuk eksekusi
+
+•
+•
+
+Mencari referensi teknis, paper, CTI report publik, dan dokumentasi online
+Menggunakan threat data dari repositori publik yang tersedia secara legal dan etis
+
+6.2 Yang Tidak Diperbolehkan
+•
+
+Mengakses, mengumpulkan, atau menggunakan data dari sistem internal, infrastruktur
+privat, atau sistem tanpa izin pemilik
+
+•
+
+Melakukan active scanning, probing, atau interaksi langsung dengan IP/domain yang
+dianalisis — analisis harus pasif dan berbasis data publik
+Menggunakan data dari dark web yang tidak tersedia di surface web secara legal
+
+•
+
+PT Gemilang Satria Perkasa | Divisi Rekrutmen & SDMDokumen Internal — Tidak untuk Disebarluaskan
+
+Halaman 1
+
+PT GEMILANG SATRIA PERKASA
+
+DOKUMEN RAHASIA
+
+Jl. Bangka Raya No.27 Pela Mampang, Jakarta Selatan 12720
+Tel: (021) 22715320 | www.gemilangsatriaperkasa.co.id
+
+6.3 Cara Submission
+•
+
+Kirim semua deliverable ke email rekrutmen GSP dengan subject: [AIE-TASK] Yoel Andreas
+Manoppo
+
+•
+
+Atau: upload ke Google Drive dan bagikan link ke evaluator
+
+7. PENUTUP
+Tugas ini dirancang untuk mencerminkan pekerjaan nyata yang akan Anda hadapi di PT GSP.
+Kami tidak mencari solusi yang sempurna — kami mencari cara berpikir Anda dalam menghadapi
+masalah Cyber Threat Intelligence yang nyata, keputusan arsitektur yang Anda buat, dan
+bagaimana Anda mendokumentasikan keterbatasan sistem Anda.
+Ingat: dalam sistem CTI, kemampuan untuk jujur tentang confidence level, mengakui konflik
+intelijen, dan tidak mengklaim kepastian yang tidak ada jauh lebih berharga daripada laporan yang
+terlihat lengkap namun tidak dapat diverifikasi.
+
+Diterbitkan oleh:
+
+Divisi AI & Rekrutmen Teknis
+PT Gemilang Satria Perkasa
+Jakarta, 13 Maret 2026
+
+Untuk pertanyaan teknis terkait dataset,
+hubungi evaluator maksimal H-1 sebelum
+batas waktu submission.
+
+Semoga sukses, Yoel.
+
+PT Gemilang Satria Perkasa | Divisi Rekrutmen & SDMDokumen Internal — Tidak untuk Disebarluaskan
+
+Halaman 1

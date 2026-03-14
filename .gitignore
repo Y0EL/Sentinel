@@ -58,3 +58,6 @@ backend/reports/*.pdf
 backend/siem_*.json
 backend/mock_screenshot_*.png
 backend/gsp_intel_vault.json
+
+.windsurf/
+tmp
