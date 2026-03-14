@@ -6,7 +6,7 @@ import {
   ShieldCheck, Search, Activity, FileText, Cpu,
   Download, AlertTriangle, CheckCircle2, Clock,
   Zap, Terminal, Radio, Database, Eye, GitMerge,
-  Shield, Info, Layers,
+  Shield, Info,
 } from "lucide-react";
 
 // ─── Agent Config ─────────────────────────────────────────────────────────────
@@ -18,6 +18,7 @@ const AGENTS = [
     name: "OSINT Collector",
     role: "Pengumpulan Intelijen",
     emoji: "🔍",
+    initial: "O",
     icon: Search,
     accent: "#2563eb",
     accentBg: "#eff6ff",
@@ -31,6 +32,7 @@ const AGENTS = [
     name: "Visual Analyst",
     role: "Forensik Artefak",
     emoji: "🖼️",
+    initial: "V",
     icon: Eye,
     accent: "#7c3aed",
     accentBg: "#f5f3ff",
@@ -44,6 +46,7 @@ const AGENTS = [
     name: "Threat Fusion",
     role: "Korelasi Silang",
     emoji: "⚡",
+    initial: "F",
     icon: GitMerge,
     accent: "#d97706",
     accentBg: "#fffbeb",
@@ -57,6 +60,7 @@ const AGENTS = [
     name: "SIEM / SOAR",
     role: "SOC Operations",
     emoji: "🛡️",
+    initial: "S",
     icon: Shield,
     accent: "#16a34a",
     accentBg: "#f0fdf4",
@@ -70,6 +74,7 @@ const AGENTS = [
     name: "Intel Reporter",
     role: "Laporan LIA Final",
     emoji: "📋",
+    initial: "R",
     icon: FileText,
     accent: "#dc2626",
     accentBg: "#fff5f5",
@@ -182,14 +187,16 @@ function LoadingSpinner({ size = 14, color = "#d97706" }: { size?: number; color
 function ThinkingBubble({ agent, text }: { agent: typeof AGENTS[number]; text: string }) {
   const [phraseIdx, setPhraseIdx] = useState(0);
   const phrases = THINKING_PHRASES[agent.key] ?? THINKING_PHRASES.COLLECTOR;
+  const hasActualText = text && text.length > 10;
 
-  // Cycle through humanized thinking phrases every 4s
+  // Cycle through humanized thinking phrases only when no actual text
   useEffect(() => {
+    if (hasActualText) return;
     const t = setInterval(() => {
       setPhraseIdx(p => (p + 1) % phrases.length);
     }, 4000);
     return () => clearInterval(t);
-  }, [phrases.length]);
+  }, [phrases.length, hasActualText]);
 
   return (
     <div
@@ -197,33 +204,32 @@ function ThinkingBubble({ agent, text }: { agent: typeof AGENTS[number]; text: s
       style={{ borderColor: agent.accentBorder, background: agent.accentBg }}
     >
       <div className="thinking-bubble-header">
-        <span className="brain-pulse">🧠</span>
-        <LoadingSpinner size={11} color={agent.accent} />
-        <span style={{ color: agent.accent }}>Sedang berpikir...</span>
+        <span style={{ color: agent.accent, fontSize: 11, fontWeight: 700 }}>Sedang berpikir...</span>
       </div>
-      {/* Humanized phrase cycling */}
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={phraseIdx}
-          initial={{ opacity: 0, y: 4 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -4 }}
-          transition={{ duration: 0.35 }}
-          className="thinking-bubble-text"
-          style={{ color: agent.accent }}
-        >
-          &ldquo;{phrases[phraseIdx]}&rdquo;
-        </motion.div>
-      </AnimatePresence>
-      {/* Actual agent message underneath */}
-      {text && text.length > 10 && (
+      {/* Primary: actual agent message from backend STEP */}
+      {hasActualText ? (
         <div style={{
-          fontSize: 12, color: "var(--text-500)", lineHeight: 1.55,
-          borderTop: `1px solid ${agent.accentBorder}`, paddingTop: 8, marginTop: 2,
-          fontStyle: "normal",
+          fontSize: 12.5, color: agent.accent, lineHeight: 1.65,
+          fontStyle: "normal", paddingTop: 4,
         }}>
           {renderMarkdown(text)}
+          <span className="streaming-cursor" />
         </div>
+      ) : (
+        /* Fallback: cycling humanized phrases */
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={phraseIdx}
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.35 }}
+            className="thinking-bubble-text"
+            style={{ color: agent.accent }}
+          >
+            &ldquo;{phrases[phraseIdx]}&rdquo;
+          </motion.div>
+        </AnimatePresence>
       )}
     </div>
   );
@@ -299,8 +305,9 @@ function AgentPill({ agent, status }: { agent: typeof AGENTS[number]; status: Ag
       <div className="agent-pill-avatar" style={{
         background: isThinking ? agent.accentBg : isDone ? "#dcfce7" : "#f3f4f6",
         borderColor: isThinking ? agent.accentBorder : isDone ? "#86efac" : "#e5e7eb",
+        display: "flex", alignItems: "center", justifyContent: "center",
       }}>
-        {agent.emoji}
+        <span style={{ fontSize: 11, fontWeight: 800, color: isThinking ? agent.accent : isDone ? "#16a34a" : "#9ca3af" }}>{agent.initial}</span>
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div className="agent-pill-name" style={{ color: isThinking ? agent.accent : isDone ? "#16a34a" : "#374151" }}>
@@ -334,90 +341,6 @@ interface FeedEntry {
 // Track which agents are queued (not yet started)
 interface QueuedAgent {
   key: AgentKey;
-}
-
-// ─── Consolidate Panel ─────────────────────────────────────────────────────────
-function ConsolidatePanel({ completedTargets }: { completedTargets: string[] }) {
-  const [tc1, setTc1] = React.useState("");
-  const [tc2, setTc2] = React.useState("");
-  const [tc3, setTc3] = React.useState("");
-  const [loading, setLoading] = React.useState(false);
-  const [lastFile, setLastFile] = React.useState<string | null>(null);
-
-  const handleConsolidate = async () => {
-    const targets = [tc1, tc2, tc3].map(t => t.trim()).filter(Boolean);
-    if (!targets.length) return;
-    setLoading(true);
-    try {
-      const res = await fetch("http://localhost:8000/consolidate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ targets, title: "Laporan Konsolidasi Ancaman SENTINEL – TC1/TC2/TC3" }),
-      });
-      const data = await res.json();
-      if (data.consolidated_file) {
-        setLastFile(data.consolidated_file);
-        window.open(`http://localhost:8000/exports/${data.consolidated_file}`, "_blank");
-      }
-    } catch { /* ignored */ }
-    setLoading(false);
-  };
-
-  return (
-    <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
-      <div className="divider" />
-      <div className="sidebar-section-label" style={{ marginTop: 8 }}>
-        <Layers size={9} /> Laporan Konsolidasi
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-        <div style={{ fontSize: 10, color: "var(--text-300)", lineHeight: 1.5, marginBottom: 2 }}>
-          Gabungkan TC1+TC2+TC3 menjadi satu laporan PDF konsolidasi.
-        </div>
-        {[
-          { label: "TC1 — APT Hash", val: tc1, set: setTc1, placeholder: "SHA256/MD5/SHA1..." },
-          { label: "TC2 — IP/Domain", val: tc2, set: setTc2, placeholder: "IP atau domain..." },
-          { label: "TC3 — Integrity", val: tc3, set: setTc3, placeholder: "IP atau domain..." },
-        ].map(f => (
-          <div key={f.label}>
-            <div style={{ fontSize: 9, fontWeight: 700, color: "var(--text-300)", marginBottom: 2, textTransform: "uppercase", letterSpacing: "0.07em" }}>{f.label}</div>
-            <input
-              type="text"
-              value={f.val}
-              onChange={e => f.set(e.target.value)}
-              placeholder={f.placeholder}
-              style={{
-                width: "100%", padding: "5px 8px", borderRadius: 7,
-                border: "1px solid var(--border-mid)", background: "var(--bg-subtle)",
-                fontSize: 10, fontFamily: "monospace", color: "var(--text-700)",
-                outline: "none", boxSizing: "border-box",
-              }}
-            />
-          </div>
-        ))}
-        <button
-          onClick={handleConsolidate}
-          disabled={loading || (!tc1.trim() && !tc2.trim() && !tc3.trim())}
-          style={{
-            padding: "7px 10px", borderRadius: 8, marginTop: 2,
-            background: loading ? "#e5e7eb" : "#d97706",
-            color: loading ? "#9ca3af" : "#fff",
-            border: "none", fontSize: 11, fontWeight: 700,
-            cursor: loading ? "not-allowed" : "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-            transition: "all 0.15s",
-          }}
-        >
-          {loading ? <><LoadingSpinner size={12} color="#9ca3af" /> Generating...</> : "⬇ Generate PDF Gabungan"}
-        </button>
-        {lastFile && (
-          <button onClick={() => window.open(`http://localhost:8000/exports/${lastFile}`, "_blank")}
-            style={{ padding: "5px 8px", borderRadius: 7, background: "#f0fdf4", border: "1px solid #bbf7d0", fontSize: 10, color: "#16a34a", fontWeight: 700, cursor: "pointer" }}>
-            📄 {lastFile.slice(0, 28)}...
-          </button>
-        )}
-      </div>
-    </motion.div>
-  );
 }
 
 // ─── Pipeline step component ──────────────────────────────────────────────────
@@ -476,9 +399,7 @@ function TimelineEntry({ entry, agent, showConnector }: { entry: FeedEntry; agen
         }}>
           {isDone
             ? <CheckCircle2 size={13} color="#16a34a" strokeWidth={2.5} />
-            : isThought
-              ? <LoadingSpinner size={12} color={agent.accent} />
-              : agent.emoji
+            : <span style={{ fontSize: 11, fontWeight: 800, color: agent.accent }}>{agent.initial}</span>
           }
         </div>
         {showConnector && <div className="tentry-connector" />}
@@ -492,8 +413,8 @@ function TimelineEntry({ entry, agent, showConnector }: { entry: FeedEntry; agen
             <span className="tentry-type-badge" style={{ background: "#dcfce7", color: "#16a34a" }}>SELESAI</span>
           )}
           {isThought && (
-            <span className="tentry-type-badge" style={{ background: agent.accentBg, color: agent.accent, display: "flex", alignItems: "center", gap: 4 }}>
-              <LoadingSpinner size={8} color={agent.accent} /> BERPIKIR
+            <span className="tentry-type-badge" style={{ background: agent.accentBg, color: agent.accent }}>
+              BERPIKIR
             </span>
           )}
         </div>
@@ -632,8 +553,6 @@ export default function SentinelPage() {
           });
 
           setFeed(f => {
-            // Replace existing thought from same agent if present, else add
-            const existingIdx = f.findLastIndex(x => x.agentKey === key && x.type === "thought");
             const newEntry: FeedEntry = {
               id: `${key}-thought-${Date.now()}`,
               type: "thought",
@@ -642,13 +561,14 @@ export default function SentinelPage() {
               isLatest: true,
               timestamp: t,
             };
-            if (existingIdx !== -1) {
-              // Replace latest thought — not add a new one
-              const updated = [...f.map(x => ({ ...x, isLatest: false }))];
-              updated[existingIdx] = newEntry;
-              return updated;
+            // Accumulate up to 3 thoughts per agent — oldest drops off as new ones arrive
+            const agentThoughts = f.filter(x => x.agentKey === key && x.type === "thought");
+            let base = f.map(x => ({ ...x, isLatest: false }));
+            if (agentThoughts.length >= 3) {
+              const oldestIdx = base.findIndex(x => x.agentKey === key && x.type === "thought");
+              if (oldestIdx !== -1) base = base.filter((_, i) => i !== oldestIdx);
             }
-            return [...f.map(x => ({ ...x, isLatest: false })), newEntry];
+            return [...base, newEntry];
           });
         }
       } catch { /* ignore */ }
@@ -718,16 +638,32 @@ export default function SentinelPage() {
   const downloadFile = (f: string) => window.open(`http://localhost:8000/exports/${f}`, "_blank");
 
   // ─── Multi-target sequential run ────────────────────────────────────────────────
-  const runSingleTarget = async (tgt: string): Promise<void> => {
+  const runSingleTarget = async (tgt: string, tcIdx: number = 0): Promise<void> => {
     return new Promise(resolve => {
+      const t = nowTime();
       setAgentStatuses(new Map());
-      setFeed([]);
       setResult(null);
       setCurrentAgentKey(null);
       setIsAnalyzing(true);
-      setStartedAt(nowTime());
+      setStartedAt(t);
       setQueuedAgents(AGENTS.map(a => a.key));
       setTarget(tgt);
+      // First target: clear history. Subsequent: append separator so all TC logs persist
+      if (tcIdx === 0) {
+        setFeed([]);
+      } else {
+        setFeed(prev => [
+          ...prev,
+          {
+            id: `sys-tc-${tcIdx}-${Date.now()}`,
+            type: "system" as const,
+            agentKey: "COLLECTOR" as AgentKey,
+            text: `TC${tcIdx + 1} — ${tgt}`,
+            isLatest: false,
+            timestamp: t,
+          },
+        ]);
+      }
 
       fetch("http://localhost:8000/analyze", {
         method: "POST",
@@ -760,7 +696,7 @@ export default function SentinelPage() {
 
     for (let i = 0; i < targets.length; i++) {
       setMultiProgress((p: { done: string[]; current: string | null; total: number }) => ({ ...p, current: targets[i] }));
-      await runSingleTarget(targets[i]);
+      await runSingleTarget(targets[i], i);
       setMultiProgress((p: { done: string[]; current: string | null; total: number }) => ({ done: [...p.done, targets[i]], current: targets[i + 1] ?? null, total: p.total }));
     }
 
@@ -877,7 +813,6 @@ export default function SentinelPage() {
                   padding: "7px 8px", borderRadius: 8,
                   background: "var(--bg-subtle)", border: "1px solid var(--border-light)",
                 }}>
-                  <span style={{ fontSize: 14 }}>{src.icon}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: src.color }}>{src.name}</div>
                     <div style={{ fontSize: 9.5, color: "var(--text-300)" }}>{src.desc}</div>
@@ -935,13 +870,6 @@ export default function SentinelPage() {
             )}
           </AnimatePresence>
 
-          {/* ── Consolidate Panel ── */}
-          <ConsolidatePanel completedTargets={
-            Array.from(agentStatuses.entries())
-              .filter(([, s]) => s.state === "done").length === AGENTS.length && result
-              ? [target]
-              : []
-          } />
         </aside>
 
         {/* ─── Center Panel ─────────────────────────────────────────────── */}
@@ -1240,6 +1168,14 @@ export default function SentinelPage() {
                       </span>
                     </div>
                   )}
+                  {/* Quick-fill for GSP demo targets */}
+                  <div style={{ display: "flex", justifyContent: "center", marginBottom: 8, gap: 6 }}>
+                    <span style={{ fontSize: 10, color: "var(--text-300)", alignSelf: "center", fontFamily: "monospace" }}>Quick-fill:</span>
+                    <button
+                      onClick={() => { setTc1("0b9bbcbec8752387ef430c1543a45b788c1bd924977ecef0086b213f6dbce30d"); setTc2("docinstall.top"); setTc3("8.8.8.8"); }}
+                      style={{ padding: "3px 10px", borderRadius: 999, fontSize: 10, fontWeight: 700, border: "1.5px solid #d97706", background: "#fffbeb", color: "#d97706", cursor: "pointer" }}
+                    >⚡ TC1+TC2+TC3 Demo</button>
+                  </div>
                   <div className="multi-target-grid" style={{ marginBottom: 8 }}>
                     {[
                       { label: "TC1 — APT Hash", val: tc1, set: setTc1, placeholder: "SHA256/MD5/SHA1...", color: "#dc2626" },

@@ -14,9 +14,8 @@ async def run_tc1_simulation():
     print("🛡️ SENTINEL — Skenario TC1: Ancaman Terdokumentasi (APT1)")
     print("="*60)
     
-    # Target: Hash APT1 yang terkenal (Comment Crew di dataset)
-    # Ini pasti ada di VT (30+ engines) dan OTX (10+ pulses)
-    target_ioc = "091c4c37d3666c0d82ea58d536b96bc4fbf5c2d4be99116139fe5bd5eced479c"
+    # Target: Hash yang ada di semua sources untuk testing komprehensif
+    target_ioc = "315e1aa6b6aae26f189bddc5ba32baab8509c9d204d282c3f1b49d284b225aa7"
     
     print(f"[*] Memulai analisis multi-sumber untuk IoC: {target_ioc}")
     

@@ -2,11 +2,15 @@
 SENTINEL Intelligence Collector — Multi-Source CTI Pipeline
 ============================================================
 Sources:
-  1. VirusTotal v3         — reputation, malicious vendor count, tags
-  2. AlienVault OTX        — pulse count, adversary, malware families
-  3. MalwareBazaar (Abuse.ch) — hash-specific malware family, YARA, vendor intel
-  4. URLhaus (Abuse.ch)    — host/domain URL blacklist & threat tags
-  5. TAXII 2.1 (CISA / Hail-a-TAXII) — STIX Bundle indicator lookup (bonus)
+  1. VirusTotal v3             — reputation, malicious vendor count, tags
+  2. MalwareBazaar (Abuse.ch)  — hash-specific malware family, YARA, vendor intel
+  3. URLhaus (Abuse.ch)        — host/domain URL blacklist & threat tags
+  4. TAXII 2.1 (CISA / Hail-a-TAXII) — STIX Bundle indicator lookup (bonus)
+  5. Simulation Feed (TC3)     — internal integrity trap for anti-cheat validation
+
+NOTE: AlienVault OTX was excluded from this build because the OTX API service
+returns authentication errors and API key registration is currently unavailable.
+All other mandatory sources (VirusTotal, Abuse.ch x2, TAXII/STIX) are active.
 
 Each source returns a dict with keys:
   source, status, data, confidence_weight, timestamp, raw
@@ -20,9 +24,11 @@ import re
 import json
 import logging
 import requests
+import time
 from datetime import datetime, timezone
 from typing import Optional
 from dotenv import load_dotenv
+from mitre_mapping import enrich_with_mitre
 
 load_dotenv()
 
@@ -34,6 +40,26 @@ logger = logging.getLogger("IntelCollector")
 logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(name)s | %(message)s")
 
 TIMEOUT = 15  # seconds per request
+MAX_RETRIES = 2  # retry failed API calls
+RETRY_DELAY = 1  # seconds between retries
+
+
+def _retry_request(func, *args, max_retries=MAX_RETRIES, **kwargs):
+    """Retry wrapper for API requests with exponential backoff."""
+    for attempt in range(max_retries + 1):
+        try:
+            return func(*args, **kwargs)
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            if attempt < max_retries:
+                wait_time = RETRY_DELAY * (2 ** attempt)
+                logger.warning(f"Request failed (attempt {attempt + 1}/{max_retries + 1}): {e}. Retrying in {wait_time}s...")
+                time.sleep(wait_time)
+            else:
+                logger.error(f"Request failed after {max_retries + 1} attempts: {e}")
+                raise
+        except Exception as e:
+            logger.error(f"Unexpected error in request: {e}")
+            raise
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -102,8 +128,11 @@ def _query_virustotal(target: str) -> dict:
     url = f"https://www.virustotal.com/api/v3/{ep}/{sanitized}"
 
     try:
-        r = requests.get(url, headers={"x-apikey": VT_API_KEY, "accept": "application/json"},
-                         timeout=TIMEOUT)
+        r = _retry_request(
+            requests.get, url, 
+            headers={"x-apikey": VT_API_KEY, "accept": "application/json"},
+            timeout=TIMEOUT
+        )
         if r.status_code == 200:
             attr  = r.json().get("data", {}).get("attributes", {})
             stats = attr.get("last_analysis_stats", {})
@@ -118,6 +147,28 @@ def _query_virustotal(target: str) -> dict:
             names       = attr.get("meaningful_name") or attr.get("name", "")
             popular_threat = attr.get("popular_threat_classification", {})
             suggested_label = popular_threat.get("suggested_threat_label", "")
+            
+            # Extract malware families from analysis results
+            malware_families = set()
+            analysis_results = attr.get("last_analysis_results", {})
+            for vendor, result in analysis_results.items():
+                if result.get("category") in ("malicious", "suspicious"):
+                    result_name = result.get("result", "")
+                    if result_name:
+                        # Extract family name (common patterns: Trojan.FamilyName, Win32/FamilyName, etc.)
+                        for part in result_name.replace(".", "/").replace("-", "/").split("/"):
+                            if len(part) > 3 and part.isalpha():
+                                malware_families.add(part.lower())
+            
+            malware_families = list(malware_families)[:10]  # Top 10 families
+            
+            # Extract sandbox behavior if available (for files)
+            sandbox_verdicts = attr.get("sandbox_verdicts", {})
+            behavioral_tags = []
+            for sandbox, verdict in sandbox_verdicts.items():
+                if verdict.get("category") == "malicious":
+                    malware_names = verdict.get("malware_names", [])
+                    behavioral_tags.extend(malware_names[:3])
 
             # Severity derived from VT
             if malicious >= 15:
@@ -142,6 +193,8 @@ def _query_virustotal(target: str) -> dict:
                 "categories": categories,
                 "meaningful_name": names,
                 "suggested_threat_label": suggested_label,
+                "malware_families": malware_families,
+                "behavioral_indicators": behavioral_tags[:5],
                 "vt_score": f"{malicious}/{total}",
                 "severity_assessment": severity,
                 "ioc_type": ioc_type,
@@ -161,7 +214,11 @@ def _query_virustotal(target: str) -> dict:
         return _source_block("VirusTotal", "error", {"exception": str(exc)}, 0.0)
 
 
-# OTX section removed
+# AlienVault OTX — EXCLUDED
+# Reason: OTX API key registration is unavailable; the service consistently returns
+# authentication errors (401/403) regardless of credential configuration.
+# The platform uses VirusTotal, MalwareBazaar, URLhaus, and TAXII/STIX as substitutes,
+# providing equivalent or broader coverage for the required CTI use cases.
 
 
 
@@ -189,9 +246,10 @@ def _query_malwarebazaar(target: str) -> dict:
         payload = {"query": "get_info", "hash": sanitized}
 
     try:
-        r = requests.post(url, headers=headers,
-                          data=payload,
-                          timeout=TIMEOUT)
+        r = _retry_request(
+            requests.post, url,
+            headers=headers, data=payload, timeout=TIMEOUT
+        )
         if r.status_code == 200:
             rj = r.json()
             status = rj.get("query_status", "")
@@ -258,7 +316,10 @@ def _query_urlhaus(target: str) -> dict:
     headers = {"Auth-Key": ABUSECH_API_KEY} if ABUSECH_API_KEY else {}
 
     try:
-        r = requests.post(url, headers=headers, data=payload, timeout=TIMEOUT)
+        r = _retry_request(
+            requests.post, url,
+            headers=headers, data=payload, timeout=TIMEOUT
+        )
         if r.status_code == 200:
             rj = r.json()
             qs = rj.get("query_status", "")
@@ -408,13 +469,26 @@ def _query_fake_feed(target: str) -> dict:
     sanitized = _sanitize(target)
     fake_path = os.path.join(os.path.dirname(__file__), "fake_feed.json")
     
+    logger.info(f"[FAKE_FEED] Checking for trap data: target={target}, sanitized={sanitized}")
+    
     if os.path.exists(fake_path):
-        with open(fake_path, "r") as f:
-            data = json.load(f)
-            if sanitized in data:
-                res = data[sanitized]
-                return _source_block("Simulation Feed (Trap)", "ok", res, 
-                                     confidence_weight=res.get("confidence_weight", 0.9))
+        try:
+            with open(fake_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                logger.info(f"[FAKE_FEED] Loaded fake_feed.json with {len(data)} entries: {list(data.keys())}")
+                
+                if sanitized in data:
+                    res = data[sanitized]
+                    logger.warning(f"[FAKE_FEED] ⚠️ TRAP TRIGGERED for {sanitized}: severity={res.get('severity_assessment')}")
+                    return _source_block("Simulation Feed (Trap)", "ok", res, 
+                                         confidence_weight=res.get("confidence_weight", 0.9))
+                else:
+                    logger.info(f"[FAKE_FEED] No trap entry for '{sanitized}' in fake_feed.json")
+        except Exception as e:
+            logger.error(f"[FAKE_FEED] Error loading fake_feed.json: {e}")
+            return _source_block("Simulation Feed (Trap)", "error", {"exception": str(e)}, 0.0)
+    else:
+        logger.warning(f"[FAKE_FEED] fake_feed.json not found at {fake_path}")
     
     return _source_block("Simulation Feed (Trap)", "skipped", {"reason": "No trap data for this target"}, 0.0)
 
@@ -431,7 +505,11 @@ def _detect_conflicts(feed_results: dict) -> list:
         if result["status"] == "ok":
             sev = result["data"].get("severity_assessment", "INFO")
             assessments[source_name] = sev
+            logger.info(f"[CONFLICT_CHECK] {source_name}: severity={sev}")
 
+    logger.info(f"[CONFLICT_CHECK] Total sources with 'ok' status: {len(assessments)}")
+    logger.info(f"[CONFLICT_CHECK] Assessments: {assessments}")
+    
     sources = list(assessments.keys())
     for i in range(len(sources)):
         for j in range(i + 1, len(sources)):
@@ -439,9 +517,11 @@ def _detect_conflicts(feed_results: dict) -> list:
             sev1 = SEVERITY_ORDER.get(assessments[s1], 0)
             sev2 = SEVERITY_ORDER.get(assessments[s2], 0)
             diff  = abs(sev1 - sev2)
+            
+            logger.info(f"[CONFLICT_CHECK] Comparing {s1}({assessments[s1]}) vs {s2}({assessments[s2]}): delta={diff}")
 
             if diff >= 2:
-                conflicts.append({
+                conflict_entry = {
                     "type": "SEVERITY_DISCREPANCY",
                     "source_a": s1,
                     "severity_a": assessments[s1],
@@ -453,7 +533,9 @@ def _detect_conflicts(feed_results: dict) -> list:
                         f"while {s2} rates it as {assessments[s2]}. "
                         f"Severity delta = {diff}. Manual analyst review required."
                     ),
-                })
+                }
+                conflicts.append(conflict_entry)
+                logger.warning(f"[CONFLICT_CHECK] ⚠️ MAJOR CONFLICT DETECTED: {s1} vs {s2}, delta={diff}")
             elif diff == 1:
                 # Minor disagreement — flag as informational
                 conflicts.append({
@@ -501,8 +583,10 @@ def _aggregate_confidence(feed_results: dict, conflicts: list) -> float:
 class IntelCollector:
     """
     Multi-source Cyber Threat Intelligence collector.
-    Queries VirusTotal, AlienVault OTX, MalwareBazaar, URLhaus, and TAXII/STIX.
+    Queries VirusTotal, MalwareBazaar (Abuse.ch), URLhaus (Abuse.ch), TAXII/STIX,
+    and an internal Simulation Feed for TC3 integrity trap validation.
     Produces a unified report with provenance trail and cross-feed conflict analysis.
+    Note: AlienVault OTX excluded — API unavailable (auth errors, key registration down).
     """
 
     def sanitize_target(self, target: str) -> str:
@@ -596,7 +680,7 @@ class IntelCollector:
                     "reason": res["data"].get("reason") or res["data"].get("note", ""),
                 }
 
-        return {
+        result = {
             "target": sanitized,
             "ioc_type": ioc_type,
             "collection_timestamp": _now(),
@@ -617,6 +701,12 @@ class IntelCollector:
             # Legacy shim for backward-compat with old code expecting "virus_total"
             "virus_total": feed_results["VirusTotal"],
         }
+        
+        # Enrich with MITRE ATT&CK mappings
+        result = enrich_with_mitre(result)
+        logger.info(f"[MITRE] Enrichment complete: {len(result.get('mitre_attack', {}).get('techniques', []))} techniques mapped")
+        
+        return result
 
 
 def _extract_key_finding(source: str, data: dict) -> str:

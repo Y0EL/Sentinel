@@ -180,6 +180,9 @@ class ReportGenerator:
         WIB = timezone(timedelta(hours=7))
         ts         = datetime.now(WIB).strftime("%d %B %Y, %H:%M WIB")
         analysis   = _sanitize_text(data.get("analysis", ""))
+        # Replace any LLM-hallucinated placeholder values with the real target
+        analysis = re.sub(r'\bexample\.com\b', target, analysis, flags=re.IGNORECASE)
+        analysis = re.sub(r'\bunknown_target\b', target, analysis, flags=re.IGNORECASE)
 
         elements = []
 

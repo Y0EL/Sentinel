@@ -1,34 +1,115 @@
 # Technical Write-up: SENTINEL — Cyber Threat Intelligence & Fusion Platform
 
-## 1. Pendahuluan
-SENTINEL dirancang sebagai platform intelijen ancaman otomatis tingkat lanjut yang memadukan pengumpulan data multi-sumber (OSINT), orkestrasi AI agentic, dan Computer Vision (VLM). Fokus utama platform ini adalah pada **integritas data** dan **biaya operasional yang efisien** melalui analisis otomatis yang mendalam.
-
-## 2. Arsitektur Sistem
-Sistem dibangun menggunakan arsitektur orkestrasi agen berbasis **CrewAI**, yang memungkinkan pembagian tugas secara spesifik:
-- **Lead Intelligence Collector**: Mengumpulkan data dari VirusTotal, Abuse.ch, dan TAXII/STIX secara simultan.
-- **Visual Evidence Specialist**: Menggunakan Gemini 1.5 Pro (VLM) untuk menganalisis screenshot malware atau log visual.
-- **Threat Fusion Analyst**: Melakukan korelasi silang (cross-feed correlation) dan mendeteksi konflik integritas.
-- **SIEM/SOAR Specialist**: Mentransformasi temuan menjadi format standar industri (ECS JSON & Markdown Playbook).
-- **Strategic Reporter**: Menyusun Laporan Intelijen Ancaman (LIA) formal dalam Bahasa Indonesia.
-
-## 3. Penanganan Threat Case (TC)
-
-### TC1 — Ancaman Terdokumentasi (Ancaman APT)
-Sistem menggunakan multi-source collection untuk memverifikasi hash dari dataset APT1. Dengan menarik data dari VirusTotal dan AlienVault OTX (sebelumnya), sistem membuktikan konsensus ancaman yang solid dan memetakan TTPs ke framework MITRE ATT&CK secara otomatis.
-
-### TC2 — Ancaman Ambigu (Sinyal Lemah)
-Pada skenario ini, sistem menghadapi IoC dengan data reputasi yang minim atau tidak konsisten (contoh: IP utilitas atau domain baru). AI agent menggunakan reasoning berbasis elemen pendukung (tags, categories, visual evidence) untuk menentukan skor risiko yang proporsional ketimbang mengandalkan satu skor biner.
-
-### TC3 — Integrity Trap (Anti-Cheat Detection)
-Fitur unggulan SENTINEL adalah **Integrity Checker**. Dalam skenario TC3, sistem sengaja diuji dengan feed yang bertentangan (misal: feed simulasi melaporkan 'Critical' pada IP publik yang bersih). Fusion Agent didesain untuk mendeteksi `severity delta` > 2 tingkat antar feed dan secara otomatis menandai `integrity_conflict: true` dalam laporan, mencegah otomatisasi SOC mengambil tindakan agresif pada false-positive yang disengaja.
-
-## 4. Justifikasi Teknologi
-- **CrewAI + GPT-4o**: Dipilih karena kemampuan reasoning yang superior dan dukungan terhadap Structured Output (Pydantic), memastikan data yang dihasilkan oleh agen selalu konsisten dengan skema database/SIEM.
-- **Gemini 1.5 Pro**: Digunakan sebagai mesin VLM karena jendela konteks yang besar dan akurasi OCR/VLM yang tinggi pada artefak digital.
-- **Elastic Common Schema (ECS)**: Menjamin integrasi mulus dengan stack SIEM modern seperti Elastic, Splunk, atau QRadar.
-
-## 5. Kesimpulan
-SENTINEL tidak hanya sekadar pengumpul data IoC, tetapi merupakan mesin "reasoning" yang memprioritaskan atribusi sumber dan verifikasi konflik. Hal ini membuatnya unggul dalam menghadapi taktik disinformasi atau kegagalan feed data tunggal dalam infrastruktur keamanan modern.
+*Yoel Andreas Manoppo — GSP Task Assessment 2026*
 
 ---
-*Yoel Andreas Manoppo — GSP Task Assessment 2026*
+
+## 1. Pendahuluan
+
+SENTINEL adalah platform Cyber Threat Intelligence (CTI) generasi lanjut yang menggabungkan tiga pilar utama: pengumpulan intelijen multi-sumber (OSINT), orkestrasi AI agentic berbasis CrewAI, dan analisis artefak visual menggunakan Vision-Language Model (VLM). Platform ini dirancang untuk menjawab tantangan utama operasi SOC modern: **data intelijen yang terfragmentasi, tidak terverifikasi, dan rawan disinformasi**.
+
+Filosofi desain SENTINEL berfokus pada tiga prinsip: (1) setiap klaim harus memiliki **provenance trail** yang dapat diaudit, (2) konflik antar sumber harus **diekspos secara eksplisit**, bukan diratakan, dan (3) output harus langsung dapat dikonsumsi oleh toolchain SIEM/SOAR tanpa konversi manual.
+
+---
+
+## 2. Arsitektur Sistem
+
+### 2.1 Pipeline Multi-Agen (CrewAI)
+
+Sistem dibangun menggunakan orkestrasi agen berbasis **CrewAI dengan GPT-4o** sebagai LLM utama. Lima agen bekerja dalam pipeline sekuensial yang terstruktur:
+
+| Agen | Peran | Output Utama |
+|------|-------|--------------|
+| **Lead Intelligence Collector** | Query multi-sumber: VirusTotal, MalwareBazaar, URLhaus, TAXII/STIX | Raw CTI per-feed dengan timestamp dan confidence weight |
+| **Visual Evidence Specialist** | Analisis artefak visual via Gemini 1.5 Pro (VLM/OCR) | Ekstraksi IoC dari screenshot, log visual, atau gambar malware |
+| **Threat Fusion Analyst** | Korelasi silang, deteksi konflik integritas, kalkulasi skor risiko | `FusionResult` JSON (Pydantic-validated) |
+| **SIEM/SOAR Specialist** | Transformasi temuan ke standar ECS + playbook SOAR | Alert JSON (ECS) + SOAR Playbook Markdown |
+| **Strategic Reporter** | Penyusunan Laporan Intelijen Ancaman (LIA) formal | PDF laporan dalam Bahasa Indonesia |
+
+### 2.2 Cross-Feed Integrity Checker
+
+Komponen kritis yang membedakan SENTINEL dari tool CTI konvensional adalah **Integrity Checker**. Setiap feed yang aktif dibandingkan severity-nya menggunakan skala ordinal (CRITICAL=4, HIGH=3, MEDIUM=2, LOW=1, INFO=0). Jika delta antara dua sumber ≥ 2 tingkat, sistem menandai `integrity_conflict: true` dan menyertakan detail konflik (source_a, severity_a, source_b, severity_b) di seluruh output — SIEM JSON, SOAR playbook, dan PDF LIA.
+
+Confidence score dihitung secara weighted (`_aggregate_confidence()`) dengan penalti 0.05 per konflik yang terdeteksi, mendorong analis untuk selalu memvalidasi manual pada kasus high-conflict.
+
+### 2.3 MITRE ATT&CK Auto-Mapping
+
+Module `mitre_mapping.py` memetakan >30 malware family dan kategori ancaman ke taktik dan teknik MITRE ATT&CK secara deterministik. Pemetaan ini diinjeksikan ke SIEM JSON (`threat.tactic.name`, `threat.technique.id`) dan SOAR playbook untuk memudahkan triase berbasis TTP.
+
+---
+
+## 3. Penanganan Threat Cases (TC)
+
+### TC1 — Ancaman Terdokumentasi (Hash APT1)
+
+**Target**: `091c4c37d3666c0d82ea58d536b96bc4fbf5c2d4be99116139fe5bd5eced479c`
+
+**Hasil**: VirusTotal mengidentifikasi file sebagai malicious dengan 13+ engine positif. MalwareBazaar mengonfirmasi signature (LummaStealer) dengan deteksi pola YARA C2 dan CP_Script_Inject. URLhaus menemukan 1 URL terkait. Ketiga sumber sepakat pada severity **HIGH** → `integrity_conflict: false`, `confidence_score: 0.85`. Sistem memetakan TTPs: Collection, Command and Control, Credential Access (T1056.001, T1071.001, T1059.003).
+
+### TC2 — Ancaman Ambigu (Domain Aktif)
+
+**Target**: `docinstall.top` (SSA Stealer Distribution Point)
+
+**Hasil**: IoC ini merupakan domain aktif dengan sinyal reputasi dari beberapa feed. Sistem menggunakan reasoning berbasis elemen pendukung — tags, categories, dan data distribusi URLhaus — untuk menentukan skor risiko proporsional meskipun data dari sumber individual bervariasi. Confidence score disesuaikan secara dinamis berdasarkan jumlah sumber yang merespons.
+
+### TC3 — Integrity Trap (Anti-Cheat Detection)
+
+**Target**: `8.8.8.8` (IP Google DNS yang bersih secara publik)
+
+**Mekanisme**: `fake_feed.json` menyuntikkan laporan CRITICAL palsu untuk `8.8.8.8` dengan klaim "Sinyal C2 aktif dari botnet Mirai varian baru". VirusTotal dan sumber lain menilai IP ini sebagai INFO/clean.
+
+**Hasil yang Diharapkan**: `_detect_conflicts()` mendeteksi delta severity = CRITICAL vs INFO = 4 tingkat (≥ threshold 2). Sistem menandai `integrity_conflict: true`, menampilkan peringatan di SOAR playbook ("WAJIB: Validasi manual sebelum mengeksekusi langkah containment apa pun"), dan mencatat konflik eksplisit di integrity report. Ini membuktikan bahwa **platform tidak dapat dibohongi oleh satu sumber palsu** — mekanisme anti-disinformasi bekerja.
+
+---
+
+## 4. Justifikasi Pemilihan Teknologi
+
+| Teknologi | Alasan Pemilihan |
+|-----------|-----------------|
+| **CrewAI + GPT-4o** | Kemampuan reasoning superior, dukungan Structured Output (Pydantic), memastikan konsistensi skema di seluruh pipeline |
+| **Gemini 1.5 Pro (VLM)** | Jendela konteks 1M token, akurasi OCR tinggi pada artefak digital, kemampuan analisis gambar multi-modal |
+| **Elastic Common Schema (ECS)** | Standar industri yang kompatibel dengan Elastic SIEM, Splunk, dan IBM QRadar tanpa konversi tambahan |
+| **FastAPI + WebSocket** | Async-first, real-time streaming progress update ke frontend tanpa polling |
+| **ReportLab (PDF)** | Kontrol layout penuh untuk laporan profesional, bebas dependensi cloud rendering |
+| **TAXII 2.1 / STIX** | Standar industri untuk pertukaran CTI terstruktur; memungkinkan integrasi langsung dengan ISAC/ISAO |
+
+### Catatan: AlienVault OTX
+
+AlienVault OTX dikecualikan dari build ini karena **layanan API OTX mengalami gangguan autentikasi persisten** — registrasi API key tidak dapat diselesaikan. Platform menggunakan VirusTotal, MalwareBazaar, URLhaus, dan TAXII/STIX sebagai pengganti yang memberikan cakupan setara. Seluruh sumber yang digunakan memiliki API publik yang stabil dan terdokumentasi.
+
+---
+
+## 5. Struktur Output & Deliverables
+
+Setiap analisis menghasilkan **4 artifact per target**:
+
+1. **`report_<hash>.pdf`** — Laporan LIA formal (D2): metadata, executive summary, threat landscape, detail IoC, bukti visual, konflik integritas, penilaian risiko, rekomendasi mitigasi
+2. **`siem_<hash>.json`** — ECS Alert (D3): kompatibel langsung dengan Kibana SIEM / Splunk ES
+3. **`soar_<hash>.md`** — SOAR Playbook (D3): langkah response berbasis risk score dengan MITRE ATT&CK TTPs
+4. **`integrity_<hash>.json`** — Integrity Report (D3): konflik terdeteksi, confidence score, consensus severity
+
+Untuk evaluasi multi-TC, endpoint `POST /consolidate` menghasilkan PDF gabungan dengan tabel ikhtisar semua target beserta risk score dan status konflik.
+
+---
+
+## 6. Limitasi & Pengembangan ke Depan
+
+**Limitasi saat ini:**
+- Pipeline bersifat sekuensial (CrewAI `Process.sequential`) — belum memanfaatkan eksekusi paralel antar agen independen
+- Tidak ada persistensi database; hasil disimpan in-memory per sesi server
+- TAXII/STIX feed publik (Hail-a-TAXII) sering tidak memiliki per-IoC match untuk target spesifik
+
+**Rekomendasi pengembangan:**
+- Implementasi `Process.hierarchical` di CrewAI untuk parallelism Collector ↔ Vision
+- Tambahkan knowledge graph (NetworkX) untuk visualisasi relasi IoC
+- Integrasikan output STIX 2.1 sebagai format ekspor tambahan untuk berbagi intelijen dengan komunitas CTI
+- Tambahkan cache layer (Redis) untuk menghindari duplikasi query API pada IoC yang sama
+
+---
+
+## 7. Kesimpulan
+
+SENTINEL membuktikan bahwa platform CTI dapat dibangun dengan pendekatan "reasoning-first" yang memprioritaskan atribusi sumber, transparansi konflik, dan output yang langsung dapat dikonsumsi oleh infrastruktur keamanan yang ada. Keunggulan utama platform ini bukan sekadar pengumpulan data, tetapi kemampuannya untuk **mendeteksi dan melaporkan disinformasi** dalam feed CTI — sebuah kemampuan kritis di era threat intelligence manipulation yang semakin canggih.
+
+---
+*Laporan ini merupakan bagian dari deliverable D4 untuk GSP Task Assessment 2026.*

@@ -7,7 +7,7 @@ import json
 import re
 import asyncio
 from models import FusionResult
-from typing import Optional, Any
+from typing import Optional, Any, Dict
 
 class SentinelCrew:
     def __init__(self, target: str, image_path: Optional[str] = None):
@@ -55,10 +55,11 @@ class SentinelCrew:
 
                 if detected_stage > self.current_stage:
                     self.current_stage = detected_stage
-                    asyncio.run_coroutine_threadsafe(
-                        on_chunk({"source": "system", "type": "PROGRESS", "stage": self.current_stage}),
-                        self.loop
-                    )
+                    if on_chunk and self.loop.is_running():
+                        asyncio.run_coroutine_threadsafe(
+                            on_chunk({"source": "system", "type": "PROGRESS", "stage": self.current_stage}),
+                            self.loop
+                        )
 
                 # ── Message Extraction (tiered priority) ────────────────
                 human_msg = ""
@@ -143,7 +144,7 @@ class SentinelCrew:
                     "message": human_msg,
                     "type":   "STEP",
                 }
-                if self.loop.is_running():
+                if on_chunk and self.loop.is_running():
                     asyncio.run_coroutine_threadsafe(on_chunk(msg), self.loop)
 
 
@@ -293,7 +294,7 @@ class SentinelCrew:
                 human_msg = DONE_TEMPLATES.get(role_key, f"Tahap {stage_name} selesai.")
 
                 # Broadcast AGENT_DONE with full message
-                if self.loop.is_running():
+                if on_chunk and self.loop.is_running():
                     asyncio.run_coroutine_threadsafe(
                         on_chunk({
                             "source": "agent",
@@ -307,17 +308,17 @@ class SentinelCrew:
                     )
 
                 # Advance stage indicator
-                if self.loop.is_running():
+                if on_chunk and self.loop.is_running():
                     asyncio.run_coroutine_threadsafe(
                         on_chunk({"source": "system", "type": "PROGRESS", "stage": stage_idx + 1}),
                         self.loop
-                )
+                    )
 
                 # Notify start of NEXT agent (proactive: shows upcoming agent as active)
                 next_idx = idx + 1
                 if next_idx in TASK_ROLE_MAP:
                     next_role, next_stage, next_name = TASK_ROLE_MAP[next_idx]
-                    if self.loop.is_running():
+                    if on_chunk and self.loop.is_running():
                         asyncio.run_coroutine_threadsafe(
                             on_chunk({
                                 "source": "agent",
@@ -354,6 +355,12 @@ class SentinelCrew:
                 "task": "Pengumpulan OSINT",
             })
 
+        # Collect intelligence directly to get MITRE data
+        from intelligence_collector import IntelCollector
+        intel_collector = IntelCollector()
+        intel_data = intel_collector.collect_all(self.target)
+        mitre_data_from_collector = intel_data.get("mitre_attack", {})
+        
         result = await sentinel_crew.akickoff(inputs=crew_inputs)
         
         final_report = str(result)
@@ -386,7 +393,7 @@ class SentinelCrew:
         # clean_id already defined above (single source of truth)
         risk: str = "INFO"
         conflict: bool = False
-        fusion_details: dict[str, Any] = {}
+        fusion_details: Dict[str, Any] = {}
         reasoning_text: str = final_report
 
 
@@ -403,6 +410,9 @@ class SentinelCrew:
                 conflict = fusion_data.get("integrity_conflict", False)
                 fusion_details = fusion_data
                 reasoning_text = fusion_data.get("reasoning", final_report)
+            
+            # Inject MITRE data from intelligence collector
+            fusion_details["mitre_attack"] = mitre_data_from_collector
 
         import os
         export_dir = os.path.join(os.path.dirname(__file__), "exports")
@@ -421,8 +431,14 @@ class SentinelCrew:
         ecs_ioc_type = ioc_type_map.get(ioc_t, "unknown")
 
         # Pull feed-level data from fusion_details if available
-        active_sources  = fusion_details.get("active_sources") or []
-        conflict_list   = fusion_details.get("conflict_details") or []
+        # NOTE: conflict_list uses intel_data["integrity_conflicts"] (deterministic Python dicts
+        # from _detect_conflicts()) rather than fusion_details["conflict_details"] (LLM strings)
+        # This ensures SOAR and integrity report always receive properly structured conflict objects.
+        if isinstance(fusion_details, dict):
+            active_sources  = fusion_details.get("active_sources") or []
+        else:
+            active_sources = []
+        conflict_list = intel_data.get("integrity_conflicts", [])
 
         soar_filename       = f"soar_{clean_id}.md"
         integrity_filename  = f"integrity_{clean_id}.json"
@@ -447,6 +463,9 @@ class SentinelCrew:
         try:
             siem = SIEMExporter()
 
+            # Extract MITRE ATT&CK data from fusion_details
+            mitre_data = fusion_details.get("mitre_attack", {}) if isinstance(fusion_details, dict) else {}
+            
             alert = siem.to_ecs({
                 "ip":     self.target if ioc_t == "ip" else None,
                 "hash":   self.target if ioc_t in ("sha256","md5","sha1") else None,
@@ -457,7 +476,8 @@ class SentinelCrew:
                 "reasoning": reasoning_text,
                 "severity": risk,
                 "active_sources": active_sources,
-                "confidence_score": fusion_details.get("confidence_score", 0.5),
+                "confidence_score": fusion_details.get("confidence_score", 0.5) if isinstance(fusion_details, dict) else 0.5,
+                "mitre_attack": mitre_data,  # Pass MITRE data
             })
             siem.save_json(alert, siem_path)
 
@@ -467,7 +487,7 @@ class SentinelCrew:
                 risk_score=risk,
                 integrity_conflict=conflict,
                 active_sources=active_sources,
-                ttps=fusion_details.get("mitre_techniques") or [],
+                ttps=mitre_data,  # Pass full MITRE data
                 conflict_details=conflict_list,
             )
             with open(soar_path, "w", encoding="utf-8") as pf:
@@ -475,17 +495,16 @@ class SentinelCrew:
             print(f"INFO: SOAR Playbook saved → {soar_path}")
 
             # ── D3 Deliverable: Integrity Report (.json) ────────────────────
-            import json as _json
-            from datetime import datetime as _dt, timezone as _tz, timedelta as _td
-            _WIB = _tz(_td(hours=7))
+            from datetime import datetime, timezone, timedelta
+            WIB = timezone(timedelta(hours=7))
             integrity_report = {
                 "target": self.target,
-                "analysis_timestamp": _dt.now(_WIB).strftime("%d-%b-%Y %H:%M WIB"),
+                "analysis_timestamp": datetime.now(WIB).strftime("%d-%b-%Y %H:%M WIB"),
                 "active_sources": active_sources,
                 "integrity_conflict_detected": conflict,
                 "conflict_count": len(conflict_list),
                 "conflicts": conflict_list,
-                "aggregate_confidence": fusion_details.get("confidence_score", 0.5),
+                "aggregate_confidence": fusion_details.get("confidence_score", 0.5) if isinstance(fusion_details, dict) else 0.5,
                 "consensus_severity": risk,
                 "notes": (
                     "Integrity conflicts represent disagreements between CTI feed severity assessments. "
@@ -495,20 +514,36 @@ class SentinelCrew:
                 ),
             }
             with open(integrity_path, "w", encoding="utf-8") as ir:
-                _json.dump(integrity_report, ir, indent=4, ensure_ascii=False)
+                json.dump(integrity_report, ir, indent=4, ensure_ascii=False)
             print(f"INFO: Integrity Report saved → {integrity_path}")
 
         except Exception as e:
             import traceback
             print(f"FAILED TO GENERATE SIEM/SOAR/INTEGRITY ARTIFACTS: {e}")
-            print(traceback.format_exc())
+            traceback.print_exc()
             # Ensure files always exist even if empty / error
             for p in [siem_path, soar_path, integrity_path]:
                 if not os.path.exists(p):
                     try:
                         with open(p, "w", encoding="utf-8") as _f:
-                            _f.write("{\"error\": \"Generation failed\", \"target\": \"" + self.target + "\"}" if p.endswith(".json") else f"# Error generating {p}")
-                    except Exception: pass
+                            if p.endswith(".json"):
+                                # Create proper error JSON with debug info
+                                error_data = {
+                                    "error": "Generation failed", 
+                                    "target": self.target,
+                                    "debug_info": {
+                                        "exception": str(e),
+                                        "ioc_type": ioc_t,
+                                        "clean_id": clean_id,
+                                        "fusion_data_available": fusion_data is not None,
+                                        "active_sources": active_sources
+                                    }
+                                }
+                                json.dump(error_data, _f, indent=2)
+                            else:
+                                _f.write(f"# Error generating {os.path.basename(p)}\n\nTarget: {self.target}\nError: {str(e)}\n\nDebug Info:\n- IOC Type: {ioc_t}\n- Clean ID: {clean_id}\n- Fusion Data: {'Yes' if fusion_data else 'No'}")
+                    except Exception as write_err:
+                        print(f"CRITICAL: Could not write error file {p}: {write_err}")
 
         return {
             "raw_result":        final_report,

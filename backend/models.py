@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
 
 class ThreatIntel(BaseModel):
     target: str
@@ -36,7 +36,7 @@ class FusionResult(BaseModel):
     )
     conflict_details: List[str] = Field(
         default_factory=list,
-        description="List of text descriptions for each conflict detected"
+        description="List of human-readable text descriptions for each conflict detected"
     )
 
 
