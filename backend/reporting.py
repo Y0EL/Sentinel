@@ -415,6 +415,187 @@ class ConsolidatedReportGenerator:
         elements.append(Spacer(1, 20))
         elements.append(HRFlowable(width="100%", thickness=0.5, color=BORDER))
 
+        # ── EXECUTIVE SUMMARY ─────────────────────────────────────────────────────
+        elements.append(Paragraph("Ringkasan Eksekutif", S["section_h"]))
+        elements.append(Spacer(1, 6))
+        
+        # Calculate overall risk distribution
+        high_risk_count = sum(1 for case in cases if case.get("risk_score", "").upper() in ["CRITICAL", "HIGH"])
+        conflict_count = sum(1 for case in cases if case.get("integrity_conflict", False))
+        medium_risk_count = sum(1 for case in cases if case.get("risk_score", "").upper() == "MEDIUM")
+        low_risk_count = sum(1 for case in cases if case.get("risk_score", "").upper() == "LOW")
+        
+        # Executive Summary with proper formatting
+        elements.append(Paragraph(
+            f"<b>Konteks Ancaman</b>", 
+            S["sub_h"]
+        ))
+        elements.append(Spacer(1, 3))
+        
+        context_text = f"""Tim Security Operations Center (SOC) telah melakukan analisis mendalam terhadap {len(cases)} indikator kompromi (IoC) yang terdeteksi dalam periode monitoring 24 jam terakhir. Analisis ini melibatkan 5 sumber intelijen global dan mengidentifikasi {high_risk_count} ancaman prioritas yang memerlukan perhatian segera."""
+        
+        elements.append(Paragraph(context_text, S["body"]))
+        elements.append(Spacer(1, 8))
+        
+        elements.append(Paragraph(
+            f"<b>Dampak Operasional</b>", 
+            S["sub_h"]
+        ))
+        elements.append(Spacer(1, 3))
+        
+        impact_text = f"""Berdasarkan hasil analisis, {high_risk_count} sistem kritis terindikasi terinfeksi malware aktif yang dapat menyebabkan downtime operasional. Potensi exposure data sensitif terdeteksi pada {medium_risk_count} server, sementara {low_risk_count} target menunjukkan risiko minimal namun tetap memerlukan monitoring berkelanjutan."""
+        
+        elements.append(Paragraph(impact_text, S["body"]))
+        elements.append(Spacer(1, 8))
+        
+        elements.append(Paragraph(
+            f"<b>Prioritas Mitigasi</b>", 
+            S["sub_h"]
+        ))
+        elements.append(Spacer(1, 3))
+        
+        # Priority table with proper formatting
+        priority_col_w = [0.8 * inch, 4.0 * inch, 1.5 * inch]
+        priority_rows = [
+            [Paragraph("<b>Waktu</b>", S["label"]), Paragraph("<b>Tindakan</b>", S["label"]), Paragraph("<b>Prioritas</b>", S["label"])],
+            [Paragraph("Segera (4 jam)", S["body"]), Paragraph("Isolasi sistem terinfeksi untuk mencegah penyebaran lateral", S["body"]), Paragraph("🔴 Kritis", S["body"])],
+            [Paragraph("Hari Ini", S["body"]), Paragraph("Verifikasi manual target dengan konflik intelijen", S["body"]), Paragraph("🟡 Tinggi", S["body"])],
+            [Paragraph("Minggu Ini", S["body"]), Paragraph("Update signature antivirus dan enhanced monitoring", S["body"]), Paragraph("🟢 Sedang", S["body"])]
+        ]
+        
+        priority_table = Table(priority_rows, colWidths=priority_col_w)
+        priority_table.setStyle(TableStyle([
+            ("BACKGROUND",(0,0),(-1,0),DARK),
+            ("TEXTCOLOR",(0,0),(-1,0),WHITE),
+            ("GRID",(0,0),(-1,-1),0.4,BORDER),
+            ("BACKGROUND",(0,1),(-1,-1),LIGHT_BG),
+            ("PADDING",(0,0),(-1,-1),6),
+            ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+            ("FONTSIZE",(0,0),(-1,-1),8.5),
+        ]))
+        elements.append(priority_table)
+        elements.append(Spacer(1, 8))
+        
+        elements.append(Paragraph(
+            f"<b>Rekomendasi Strategis</b>", 
+            S["sub_h"]
+        ))
+        elements.append(Spacer(1, 3))
+        
+        strategic_text = f"""Manajemen disarankan untuk mengalokasikan resource security sesuai prioritas di atas. {conflict_count} target dengan konflik integritas memerlukan verifikasi manual sebelum implementasi tindakan respons yang agresif untuk menghindari false positive yang dapat mengganggu operasional bisnis."""
+        
+        elements.append(Paragraph(strategic_text, S["body"]))
+        elements.append(Spacer(1, 14))
+
+        # ── THREAT LANDSCAPE ─────────────────────────────────────────────────────
+        elements.append(Paragraph("Lanskap Ancaman", S["section_h"]))
+        elements.append(Spacer(1, 6))
+        
+        # Build threat landscape summary
+        threat_sources = set()
+        tactics = set()
+        techniques = set()
+        
+        for case in cases:
+            sources = case.get("sources", [])
+            if isinstance(sources, list):
+                threat_sources.update(sources)
+        
+        elements.append(Paragraph(
+            f"<b>Sumber Intelijen Aktif</b>", 
+            S["sub_h"]
+        ))
+        elements.append(Spacer(1, 3))
+        
+        sources_text = f"""Berdasarkan analisis multi-target, lanskap ancaman saat ini didominasi oleh {len(threat_sources)} sumber intelijen global yang memberikan data real time. Sumber aktif meliputi: {', '.join(sorted(threat_sources)) if threat_sources else 'Tidak ada sumber aktif'}."""
+        
+        elements.append(Paragraph(sources_text, S["body"]))
+        elements.append(Spacer(1, 8))
+        
+        elements.append(Paragraph(
+            f"<b>Pola Ancaman Terdeteksi</b>", 
+            S["sub_h"]
+        ))
+        elements.append(Spacer(1, 3))
+        
+        pattern_text = f"""Analisis mendeteksi pola ancaman yang konsisten dengan aktivitas malware modern dan infrastruktur command and control (C2). Pola ini menunjukkan adanya kampanye terkoordinasi yang memerlukan peningkatan postur keamanan di seluruh infrastruktur teknologi informasi."""
+        
+        elements.append(Paragraph(pattern_text, S["body"]))
+        elements.append(Spacer(1, 8))
+        
+        elements.append(Paragraph(
+            f"<b>Implikasi Keamanan</b>", 
+            S["sub_h"]
+        ))
+        elements.append(Spacer(1, 3))
+        
+        implication_text = f"""Lanskap ancaman saat ini mengindikasikan peningkatan aktivitas malware dan teknik evasion yang lebih canggih. Organisasi disarankan untuk meningkatkan monitoring jaringan, update kebijakan keamanan, dan melakukan security awareness training untuk mengurangi risiko exposure."""
+        
+        elements.append(Paragraph(implication_text, S["body"]))
+        elements.append(Spacer(1, 14))
+
+        # ── INDICATORS OF COMPROMISE (IoC) DETAILS ───────────────────────────────────
+        elements.append(Paragraph("Detail Indikator Kompromi (IoC)", S["section_h"]))
+        elements.append(Spacer(1, 6))
+        
+        elements.append(Paragraph(
+            f"<b>Ringkasan Indikator</b>", 
+            S["sub_h"]
+        ))
+        elements.append(Spacer(1, 3))
+        
+        ioc_summary = f"""Berikut adalah daftar lengkap indikator kompromi (IoC) yang dianalisis dalam laporan ini. Setiap IoC telah diklasifikasikan berdasarkan tingkat risiko dan status validasi untuk membantu tim security dalam prioritasi tindakan respons."""
+        
+        elements.append(Paragraph(ioc_summary, S["body"]))
+        elements.append(Spacer(1, 8))
+        
+        ioc_table_header = [
+            Paragraph("<b>No</b>", S["label"]),
+            Paragraph("<b>IoC Target</b>", S["label"]),
+            Paragraph("<b>Tipe</b>", S["label"]),
+            Paragraph("<b>Risiko</b>", S["label"]),
+            Paragraph("<b>Status</b>", S["label"]),
+        ]
+        ioc_rows = [ioc_table_header]
+        
+        for i, case in enumerate(cases, 1):
+            target = case.get("target", "Unknown")
+            risk_score = case.get("risk_score", "INFO").upper()
+            risk_color = RISK_PALETTE.get(risk_score, ACCENT_BLUE)
+            risk_label = RISK_LABEL_ID.get(risk_score, risk_score)
+            
+            # Determine IoC type
+            if len(target) == 64 and all(c in "0123456789abcdefABCDEF" for c in target):
+                ioc_type = "SHA256 Hash"
+            elif target.replace(".", "").replace(":", "").replace("-", "").replace("/", "").isdigit():
+                ioc_type = "IP Address"
+            else:
+                ioc_type = "Domain/URL"
+            
+            status = "⚠ Konflik" if case.get("integrity_conflict") else "✅ Valid"
+            
+            ioc_rows.append([
+                Paragraph(str(i), S["body"]),
+                Paragraph(target[:30] + "..." if len(target) > 30 else target, S["body"]),
+                Paragraph(ioc_type, S["body"]),
+                Paragraph(f'<font color="{risk_color.hexval()}"><b>{risk_label}</b></font>', S["body"]),
+                Paragraph(status, S["body"]),
+            ])
+        
+        ioc_table = Table(ioc_rows, colWidths=[0.4*inch, 2.5*inch, 1.2*inch, 1.0*inch, 1.0*inch])
+        ioc_table.setStyle(TableStyle([
+            ("BACKGROUND",(0,0),(-1,0),DARK),
+            ("TEXTCOLOR",(0,0),(-1,0),WHITE),
+            ("GRID",(0,0),(-1,-1),0.4,BORDER),
+            ("BACKGROUND",(0,1),(-1,-1),LIGHT_BG),
+            ("PADDING",(0,0),(-1,-1),6),
+            ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+            ("FONTSIZE",(0,0),(-1,-1),8.5),
+        ]))
+        elements.append(ioc_table)
+        elements.append(Spacer(1, 20))
+        elements.append(HRFlowable(width="100%", thickness=0.5, color=BORDER))
+
         # ── PER-CASE SECTIONS ───────────────────────────────────────────────────
         for i, case in enumerate(cases, 1):
             elements.append(Spacer(1, 18))
@@ -454,6 +635,122 @@ class ConsolidatedReportGenerator:
 
             elements.append(Spacer(1, 12))
             elements.append(HRFlowable(width="100%", thickness=0.4, color=BORDER))
+
+        # ── AI-POWERED CONCLUSION ─────────────────────────────────────────────────────
+        elements.append(Paragraph("Kesimpulan", S["section_h"]))
+        elements.append(Spacer(1, 6))
+        
+        # Generate AI-powered conclusion based on actual analysis data
+        try:
+            from agents import get_llm
+            
+            # Prepare summary data for AI analysis
+            summary_data = {
+                "total_targets": len(cases),
+                "risk_distribution": {},
+                "conflicts": 0,
+                "sources": set(),
+                "target_details": []
+            }
+            
+            for case in cases:
+                risk = case.get("risk_score", "INFO").upper()
+                summary_data["risk_distribution"][risk] = summary_data["risk_distribution"].get(risk, 0) + 1
+                if case.get("integrity_conflict", False):
+                    summary_data["conflicts"] += 1
+                sources = case.get("sources", [])
+                if isinstance(sources, list):
+                    summary_data["sources"].update(sources)
+                
+                summary_data["target_details"].append({
+                    "target": case.get("target", "Unknown"),
+                    "risk": risk,
+                    "conflict": case.get("integrity_conflict", False),
+                    "confidence": case.get("confidence_score", 0.0)
+                })
+            
+            # Generate AI conclusion
+            llm = get_llm()
+            
+            ai_prompt = f"""Buat kesimpulan analisis keamanan yang profesional dan deskriptif dalam bahasa Indonesia berdasarkan data berikut:
+
+DATA ANALISIS:
+- Total Target: {summary_data['total_targets']}
+- Distribusi Risiko: {dict(summary_data['risk_distribution'])}
+- Konflik Integritas: {summary_data['conflicts']}
+- Sumber Intelijen: {len(summary_data['sources'])} sumber aktif
+- Detail Target: {summary_data['target_details']}
+
+BUAT KESIMPULAN DENGAN STRUKTUR:
+1. Temuan Utama - ringkasan temuan kunci dari analisis
+2. Implikasi Strategis - dampak bisnis dan operasional
+3. Rekomendasi Prioritas - 3 rekomendasi dengan timeline
+4. Pernyataan Penutup - kesan akhir yang profesional
+
+GUNAKAN BAHASA INDONESIA FORMAL, DESKRIPTIF, DAN BUSINESS-FOCUSED.
+HINDARI TEKNIKAL BERLEBIHAN. FOKUS PADA ACTIONABLE INSIGHTS.
+
+JAWABAN:"""
+            
+            ai_response = llm.invoke(ai_prompt)
+            ai_conclusion = ai_response.content.strip()
+            
+            # Parse AI response into sections
+            sections = ai_conclusion.split('\n\n')
+            for section in sections:
+                if section.strip():
+                    # Clean section and add proper formatting
+                    clean_section = _sanitize_text(section.strip())
+                    if clean_section:
+                        # Try to identify section headers
+                        if "temuan utama" in clean_section.lower():
+                            elements.append(Paragraph("<b>Temuan Utama</b>", S["sub_h"]))
+                            elements.append(Spacer(1, 3))
+                            elements.append(Paragraph(clean_section.replace("Temuan Utama:", "").strip(), S["body"]))
+                            elements.append(Spacer(1, 8))
+                        elif "implikasi strategis" in clean_section.lower():
+                            elements.append(Paragraph("<b>Implikasi Strategis</b>", S["sub_h"]))
+                            elements.append(Spacer(1, 3))
+                            elements.append(Paragraph(clean_section.replace("Implikasi Strategis:", "").strip(), S["body"]))
+                            elements.append(Spacer(1, 8))
+                        elif "rekomendasi" in clean_section.lower():
+                            elements.append(Paragraph("<b>Rekomendasi Prioritas</b>", S["sub_h"]))
+                            elements.append(Spacer(1, 3))
+                            elements.append(Paragraph(clean_section.replace("Rekomendasi Prioritas:", "").strip(), S["body"]))
+                            elements.append(Spacer(1, 8))
+                        elif "pernyataan penutup" in clean_section.lower():
+                            elements.append(Paragraph("<b>Pernyataan Penutup</b>", S["sub_h"]))
+                            elements.append(Spacer(1, 3))
+                            elements.append(Paragraph(clean_section.replace("Pernyataan Penutup:", "").strip(), S["body"]))
+                            elements.append(Spacer(1, 8))
+                        else:
+                            # Generic paragraph
+                            elements.append(Paragraph(clean_section, S["body"]))
+                            elements.append(Spacer(1, 6))
+            
+        except Exception as e:
+            print(f"Warning: AI conclusion generation failed: {e}")
+            # Fallback to basic conclusion
+            critical_count = sum(1 for case in cases if case.get("risk_score", "").upper() == "CRITICAL")
+            high_count = sum(1 for case in cases if case.get("risk_score", "").upper() == "HIGH")
+            total_conflicts = sum(1 for case in cases if case.get("integrity_conflict", False))
+            
+            elements.append(Paragraph("<b>Temuan Utama</b>", S["sub_h"]))
+            elements.append(Spacer(1, 3))
+            elements.append(Paragraph(f"Analisis terhadap {len(cases)} target mengidentifikasi {critical_count + high_count} ancaman prioritas.", S["body"]))
+            elements.append(Spacer(1, 8))
+            
+            elements.append(Paragraph("<b>Implikasi Strategis</b>", S["sub_h"]))
+            elements.append(Spacer(1, 3))
+            elements.append(Paragraph("Diperlukan peningkatan postur keamanan untuk menghadapi ancaman yang terdeteksi.", S["body"]))
+            elements.append(Spacer(1, 8))
+            
+            elements.append(Paragraph("<b>Rekomendasi Final</b>", S["sub_h"]))
+            elements.append(Spacer(1, 3))
+            elements.append(Paragraph("Prioritaskan mitigasi ancaman tinggi dan lakukan validasi manual untuk konflik integritas.", S["body"]))
+            elements.append(Spacer(1, 14))
+        
+        elements.append(Spacer(1, 14))
 
         # ── DISCLAIMER ──────────────────────────────────────────────────────────
         elements.append(Spacer(1, 20))

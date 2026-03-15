@@ -1,15 +1,32 @@
-# SENTINEL — Cyber Threat Intelligence & Fusion Platform
+# SENTINEL: Cyber Threat Intelligence & Fusion Platform
 
 SENTINEL adalah platform CTI mutakhir yang mengintegrasikan multi-agent AI orchestration dengan analisis artefak visual (VLM) untuk menghasilkan intelijen ancaman yang terverifikasi dan siap pakai (SIEM/SOAR ready).
 
 ## Fitur Utama
-- **Multi-Source CTI Collection**: Agregasi real-time dari VirusTotal, Abuse.ch (MalwareBazaar/URLhaus), dan feed TAXII/STIX 2.1.
-- **Parallel Agentic AI Orchestration**: Menggunakan CrewAI dengan hierarchical process untuk menjalankan pipeline analisis secara paralel (Collector, Vision, Fusion, Ops, Reporter).
-- **Redis Queue System**: Celery-based task queue untuk parallel processing multiple threat cases secara bersamaan.
-- **Computer Vision Analysis**: Integrasi GPT-4.1 nano untuk mengekstraksi IoC dari tangkapan layar atau log visual.
-- **Cross-Feed Integrity Checker**: Deteksi otomatis konflik intelijen antar feed sumber untuk memitigasi misinformasi.
-- **Standardized Exports**: Laporan PDF formal (LIA), Alert JSON format Elastic Common Schema (ECS), dan SOAR Playbook otomatis.
-- **Real-time WebSocket Updates**: Live progress tracking untuk setiap agent dalam pipeline.
+- **Koleksi Multi-Sumber CTI**: Agregasi real-time dari VirusTotal, Abuse.ch (MalwareBazaar/URLhaus), dan feed TAXII/STIX 2.1.
+- **Orkestrasi AI Paralel**: Menggunakan CrewAI dengan proses hierarkis untuk menjalankan pipeline analisis secara paralel (Collector, Vision, Fusion, Ops, Reporter).
+- **Sistem Antrian Redis**: Task queue berbasis Celery untuk pemrosesan paralel multiple threat case.
+- **Analisis Computer Vision**: Integrasi GPT-4.1 nano untuk mengekstrak IoC dari tangkapan layar atau log visual.
+- **Pemeriksa Integritas Lintas-Feed**: Deteksi otomatis konflik intelijen antar feed sumber untuk memitigasi misinformasi.
+- **Ekspor Standar**: Laporan PDF formal (LIA), Alert JSON format Elastic Common Schema (ECS), dan SOAR Playbook otomatis.
+- **Update Real-time WebSocket**: Pelacakan progress real-time untuk setiap agent dalam pipeline.
+
+---
+
+## 🖼️ Platform Showcase
+
+### Multi-Target Analysis Dashboard
+![Multi-Target Analysis](/frontend/public/Screenshot_1.png)
+
+### Real-time Agent Progress & Results
+![Agent Progress Tracking](/frontend/public/Screenshot_2.png)
+
+**Fitur Utama yang Ditunjukkan:**
+- **Pemrosesan Paralel Multi-Target** - Analisis 3 threat case secara simultan
+- **Orkestrasi AI Agent** - Pelacakan progress real-time untuk 5 agent khusus
+- **Pelaporan Konsolidasi** - PDF siap eksekutif dengan insight bertenaga AI
+- **Deteksi Konflik Integritas** - Penandaan otomatis untuk intel yang konflik
+- **Generasi SOAR Playbook** - Rencana respons aksi dengan pemetaan MITRE ATT&CK
 
 ---
 
@@ -17,17 +34,17 @@ SENTINEL adalah platform CTI mutakhir yang mengintegrasikan multi-agent AI orche
 
 Platform ini telah dikonfigurasi untuk menangani 3 skenario utama sesuai standar GSP Task Assessment:
 
-### 1. TC1 — Ancaman Terdokumentasi (Ancaman APT)
+### 1. TC1 Ancaman Terdokumentasi (Ancaman APT)
 **Tujuan:** Memvalidasi kemampuan sistem dalam mengumpulkan data dari 2+ sumber independen untuk ancaman yang sudah dikenal.
 - **Target IoC (APT1 Hash):** `091c4c37d3666c0d82ea58d536b96bc4fbf5c2d4be99116139fe5bd5eced479c`
 - **Ekspektasi:** Sistem menarik data dari VirusTotal, MalwareBazaar, dan URLhaus; menunjukkan konsensus severity "HIGH"; memetakan ke malware family dan TTPs MITRE ATT&CK yang sesuai.
 
-### 2. TC2 — Ancaman Ambigu (Domain Aktif)
+### 2. TC2 Ancaman Ambigu (Domain Aktif)
 **Tujuan:** Menunjukkan kemampuan reasoning AI dalam menangani IoC aktif dengan sinyal reputasi yang bervariasi antar feed.
 - **Target IoC:** `1.1.1.1` (Cloudflare DNS)
-- **Ekspektasi:** AI memberikan analisis berbasis risiko (risk-based) dengan reasoning yang mengintegrasikan tags, categories, dan data distribusi dari beberapa sumber; confidence score disesuaikan secara proporsional.
+- **Ekspektasi:** AI memberikan analisis berbasis risiko dengan reasoning yang mengintegrasikan tags, categories, dan data distribusi dari beberapa sumber; confidence score disesuaikan secara proporsional.
 
-### 3. TC3 — Integrity Trap (Konflik Intelijen / Anti-Cheat)
+### 3. TC3 Integrity Trap (Konflik Intelijen / Anti-Cheat)
 **Tujuan:** Memvalidasi fitur "Integrity Checker" dalam mendeteksi konflik sengaja antar feed.
 - **Target IoC:** `8.8.8.8` (IP Google DNS — bersih secara publik)
 - **Metode:** `fake_feed.json` menyuntikkan laporan CRITICAL palsu; sumber lain menilai IP ini sebagai INFO/clean.
@@ -299,6 +316,28 @@ ws.onmessage = (event) => {
   console.log(data.status);
 };
 ```
+
+---
+
+## 🎬 Quick Demo
+
+### Frontend Interface
+![Multi-Target Analysis Dashboard](/frontend/public/Screenshot_1.png)
+
+**Demo Steps:**
+1. **Multi-Target Input** - Masukkan 3 IoC (hash, IP, domain)
+2. **Real-time Processing** - Lihat 5 AI agents bekerja paralel
+3. **Consolidated Results** - Dapatkan executive-ready PDF
+
+### Agent Progress Tracking
+![Agent Progress Tracking](/frontend/public/Screenshot_2.png)
+
+**Key Features:**
+- 🤖 **5 Specialized Agents** - Collector, Vision, Fusion, Ops, Reporter
+- ⚡ **Parallel Processing** - Multiple threat cases simultan
+- 📊 **Live Progress** - Real-time WebSocket updates
+- 🛡️ **Integrity Detection** - Automatic conflict flagging
+- 📋 **SOAR Playbooks** - MITRE ATT&CK mapped response plans
 
 ---
 
