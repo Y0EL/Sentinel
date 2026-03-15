@@ -1,5 +1,5 @@
 {
-    "@timestamp": "2026-03-15T06:16:04.509827+00:00",
+    "@timestamp": "2026-03-15T09:38:26.662863+00:00",
     "event": {
         "kind": "alert",
         "category": [
@@ -49,17 +49,15 @@
         "conflict_summary": null,
         "active_sources": [
             "VirusTotal",
-            "MalwareBazaar",
-            "URLhaus",
-            "TAXII/STIX"
+            "MalwareBazaar"
         ],
         "consensus_severity": "INFO",
         "aggregate_confidence": 0.5,
         "visual_artefacts_detected": false,
         "reasoning_chain": "",
         "provenance": {
-            "VirusTotal": "15-Mar-2026 13:14 WIB",
-            "MalwareBazaar": "15-Mar-2026 13:14 WIB"
+            "VirusTotal": "15-Mar-2026 16:37 WIB",
+            "MalwareBazaar": "15-Mar-2026 16:37 WIB"
         }
     },
     "affected_assets": [

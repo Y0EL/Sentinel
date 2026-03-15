@@ -48,6 +48,9 @@ def _sanitize_text(text: str) -> str:
       - YAML-like front matter (--- blocks)
       - Bare '---' separator lines
       - Thought / Action / Action Input framework lines
+      - Agent internal dialogue and reasoning
+      - Debug/trace information
+      - API keys, URLs, and sensitive system info
     """
     if not text:
         return ""
@@ -67,11 +70,40 @@ def _sanitize_text(text: str) -> str:
     # 5. Remove ReAct / CrewAI framework internal lines
     framework_prefixes = (
         r"^(Thought|Action|Action Input|Observation|Final Answer|AgentFinishthought"
-        r"|I need to|I will now|I am going|Let me|I should|I have|I can)\s*[:=]?\s*"
+        r"|I need to|I will now|I am going|Let me|I should|I have|I can|Aku akan|Aku sudah"
+        r"|INFO|DEBUG|ERROR|WARNING|INFO \||DEBUG \||ERROR \||WARNING \|)\s*[:=]?\s*"
     )
     text = re.sub(framework_prefixes, "", text, flags=re.MULTILINE | re.IGNORECASE)
 
-    # 6. Collapse 3+ consecutive blank lines
+    # 6. Remove agent dialogue patterns
+    dialogue_patterns = [
+        r"Aku (akan|sudah|sedang) .*",
+        r"aku (akan|sudah|sedang) .*",
+        r"^[A-Z][a-z]+ (akan|sudah) .*",
+        r"^[A-Z][a-z]+ (akan|sudah) .*",
+    ]
+    for pattern in dialogue_patterns:
+        text = re.sub(pattern, "", text, flags=re.MULTILINE | re.IGNORECASE)
+
+    # 7. Remove URLs and API endpoints (keep only generic references)
+    text = re.sub(r"https?://[^\s]+", "[URL]", text)
+    text = re.sub(r"app\.crewai\.com/[^\s]+", "[CREWAI]", text)
+    text = re.sub(r"TRACE-[a-f0-9]+", "[TRACE_ID]", text)
+
+    # 8. Remove access codes and session IDs
+    text = re.sub(r"Access Code: [A-Za-z0-9-]+", "Access Code: [REDACTED]", text)
+    text = re.sub(r"session ID: [a-f0-9-]+", "session ID: [REDACTED]", text)
+
+    # 9. Remove file paths and system artifacts
+    text = re.sub(r"[A-Z]:\\[^\\s]+\\[^\\s]*", "[FILE_PATH]", text)
+    text = re.sub(r"/home/[^/s]+/[^/s]*", "[FILE_PATH]", text)
+
+    # 10. Remove technical implementation details
+    text = re.sub(r"Using config path: .*", "", text)
+    text = re.sub(r"HTTP Request: .*", "", text)
+    text = re.sub(r"HTTP/1\.1 [0-9]{3} OK", "", text)
+
+    # 11. Collapse 3+ consecutive blank lines
     text = re.sub(r"\n{3,}", "\n\n", text)
 
     return text.strip()

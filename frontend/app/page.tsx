@@ -387,12 +387,17 @@ export default function SentinelCommander() {
           body: JSON.stringify({ targets: validTargets }),
         });
         
-        if (!consolidateResp.ok) throw new Error(`Consolidation failed: ${consolidateResp.status}`);
+        if (!consolidateResp.ok) {
+          const errorText = await consolidateResp.text();
+          console.error("Consolidation API error:", errorText);
+          throw new Error(`Consolidation failed: ${consolidateResp.status} - ${errorText}`);
+        }
         
         const consolidateData = await consolidateResp.json();
         
         // Safety check for consolidation response
         if (!consolidateData.consolidated_files) {
+          console.error("Consolidation response:", consolidateData);
           throw new Error("Consolidation response missing file data");
         }
         

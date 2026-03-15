@@ -1,16 +1,24 @@
 {
-    "target": "8.8.8,8",
-    "analysis_timestamp": "15-Mar-2026 13:25 WIB",
+    "target": "8.8.8.8",
+    "analysis_timestamp": "15-Mar-2026 16:55 WIB",
     "active_sources": [
         "VirusTotal",
-        "MalwareBazaar",
-        "URLhaus",
-        "TAXII/STIX"
+        "Simulation Trap"
     ],
-    "integrity_conflict_detected": false,
-    "conflict_count": 0,
-    "conflicts": [],
-    "aggregate_confidence": 0.0,
-    "consensus_severity": "LOW",
-    "notes": "All active CTI sources are in agreement on this indicator's risk level."
+    "integrity_conflict_detected": true,
+    "conflict_count": 1,
+    "conflicts": [
+        {
+            "type": "SEVERITY_DISCREPANCY",
+            "source_a": "VirusTotal",
+            "severity_a": "INFO",
+            "source_b": "Simulation Trap",
+            "severity_b": "CRITICAL",
+            "delta": 4,
+            "description": "VirusTotal rates this IoC as INFO while Simulation Trap rates it as CRITICAL. Severity delta = 4. Manual analyst review required."
+        }
+    ],
+    "aggregate_confidence": 0.55,
+    "consensus_severity": "CRITICAL",
+    "notes": "Integrity conflicts represent disagreements between CTI feed severity assessments. They do NOT automatically elevate or reduce risk — analyst review required."
 }

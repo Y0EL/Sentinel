@@ -1,5 +1,5 @@
 {
-    "@timestamp": "2026-03-15T06:22:48.181211+00:00",
+    "@timestamp": "2026-03-15T09:50:28.909815+00:00",
     "event": {
         "kind": "alert",
         "category": [
@@ -45,19 +45,21 @@
         "severity": "info"
     },
     "sentinel": {
-        "integrity_conflict": false,
-        "conflict_summary": null,
+        "integrity_conflict": true,
+        "conflict_summary": "Minor discrepancy: VirusTotal=CRITICAL, MalwareBazaar=HIGH. Confidence adjustment applied.; VirusTotal rates this IoC as CRITICAL while URLhaus rates it as MEDIUM. Severity delta = 2. Manual analyst review required.; Minor discrepancy: MalwareBazaar=HIGH, URLhaus=MEDIUM. Confidence adjustment applied.",
         "active_sources": [
             "VirusTotal",
-            "MalwareBazaar"
+            "MalwareBazaar",
+            "URLhaus"
         ],
         "consensus_severity": "INFO",
         "aggregate_confidence": 0.5,
         "visual_artefacts_detected": false,
         "reasoning_chain": "",
         "provenance": {
-            "VirusTotal": "15-Mar-2026 13:21 WIB",
-            "MalwareBazaar": "15-Mar-2026 13:21 WIB"
+            "VirusTotal": "15-Mar-2026 16:48 WIB",
+            "MalwareBazaar": "15-Mar-2026 16:49 WIB",
+            "URLhaus": "15-Mar-2026 16:49 WIB"
         }
     },
     "affected_assets": [
@@ -72,6 +74,8 @@
         "sentinel",
         "cti",
         "multi-source",
-        "automated"
+        "automated",
+        "INTEGRITY-CONFLICT",
+        "MANUAL-REVIEW-REQUIRED"
     ]
 }

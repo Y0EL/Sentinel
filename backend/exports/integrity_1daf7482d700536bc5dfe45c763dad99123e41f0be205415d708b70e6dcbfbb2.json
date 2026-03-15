@@ -1,11 +1,9 @@
 {
     "target": "1daf7482d700536bc5dfe45c763dad99123e41f0be205415d708b70e6dcbfbb2",
-    "analysis_timestamp": "15-Mar-2026 13:16 WIB",
+    "analysis_timestamp": "15-Mar-2026 16:38 WIB",
     "active_sources": [
         "VirusTotal",
-        "MalwareBazaar",
-        "URLhaus",
-        "TAXII/STIX"
+        "MalwareBazaar"
     ],
     "integrity_conflict_detected": false,
     "conflict_count": 0,

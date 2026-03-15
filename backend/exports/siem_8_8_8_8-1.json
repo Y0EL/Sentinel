@@ -1,5 +1,5 @@
 {
-    "@timestamp": "2026-03-15T06:25:29.349278+00:00",
+    "@timestamp": "2026-03-15T09:55:24.765407+00:00",
     "event": {
         "kind": "alert",
         "category": [
@@ -45,19 +45,20 @@
         "severity": "info"
     },
     "sentinel": {
-        "integrity_conflict": false,
-        "conflict_summary": null,
+        "integrity_conflict": true,
+        "conflict_summary": "VirusTotal rates this IoC as INFO while Simulation Trap rates it as CRITICAL. Severity delta = 4. Manual analyst review required.",
         "active_sources": [
             "VirusTotal",
-            "MalwareBazaar",
-            "URLhaus",
-            "TAXII/STIX"
+            "Simulation Trap"
         ],
         "consensus_severity": "INFO",
         "aggregate_confidence": 0.5,
         "visual_artefacts_detected": false,
         "reasoning_chain": "",
-        "provenance": {}
+        "provenance": {
+            "VirusTotal": "15-Mar-2026 16:54 WIB",
+            "Simulation Trap": "15-Mar-2026 16:54 WIB"
+        }
     },
     "affected_assets": [
         "UNKNOWN"
@@ -71,6 +72,8 @@
         "sentinel",
         "cti",
         "multi-source",
-        "automated"
+        "automated",
+        "INTEGRITY-CONFLICT",
+        "MANUAL-REVIEW-REQUIRED"
     ]
 }

@@ -287,6 +287,11 @@ async def consolidate_reports(request: ConsolidationRequest):
     """
     Consolidate multiple threat case reports into unified report
     """
+    print(f"\n{'='*60}")
+    print(f"CONSOLIDATION REQUEST RECEIVED")
+    print(f"Targets: {request.targets}")
+    print(f"{'='*60}\n")
+    
     try:
         from reportlab.lib.pagesizes import letter, A4
         from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
@@ -320,146 +325,268 @@ async def consolidate_reports(request: ConsolidationRequest):
         print(f"DEBUG: Targets to consolidate: {request.targets}")
         print(f"DEBUG: Available task_results keys: {list(task_results.keys())}")
         
-        # Create PDF
-        doc = SimpleDocTemplate(consolidated_path, pagesize=A4, 
-                              rightMargin=72, leftMargin=72,
-                              topMargin=72, bottomMargin=18)
-        
-        styles = getSampleStyleSheet()
-        title_style = ParagraphStyle(
-            'CustomTitle',
-            parent=styles['Heading1'],
-            fontSize=24,
-            spaceAfter=30,
-            alignment=TA_CENTER,
-            textColor=colors.darkblue
-        )
-        
-        story = []
-        
-        # Title
-        story.append(Paragraph("LAPORAN INTELIJEN ANCAMAN KONSOLIDASI", title_style))
-        story.append(Spacer(1, 12))
-        story.append(Paragraph(f"<b>Tanggal:</b> {datetime.now().strftime('%d %B %Y, %H:%M WIB')}", styles['Normal']))
-        story.append(Paragraph(f"<b>Jumlah Target:</b> {len(request.targets)}", styles['Normal']))
-        story.append(Spacer(1, 20))
-        
-        # Executive Summary
-        story.append(Paragraph("<b>RINGKASAN EKSEKUTIF</b>", styles['Heading2']))
-        summary_text = f"""
-        Laporan ini mengkonsolidasikan analisis intelijen ancaman dari {len(request.targets)} target yang dianalisis 
-        menggunakan pipeline multi-agent SENTINEL. Analisis mencakup pengumpulan data dari sumber terbuka, 
-        korelasi intelijen, dan penilaian risiko komprehensif.
-        """
-        story.append(Paragraph(summary_text, styles['Normal']))
-        story.append(Spacer(1, 20))
-        
-        # Individual Reports
-        for i, target in enumerate(request.targets, 1):
-            # Try to load existing report
-            clean_target = "".join([c if c.isalnum() else "_" for c in target])
-            report_path = f"exports/report_{clean_target}.pdf"
-            
-            story.append(Paragraph(f"<b>ANALISIS TARGET {i}: {target}</b>", styles['Heading2']))
-            
-            if os.path.exists(report_path):
-                # Load and append existing report data
+        # Create consolidated report using proper ConsolidatedReportGenerator
+        from reporting import ConsolidatedReportGenerator
+        import glob
+
+        def _find_latest_export(base_dir, prefix, target_clean, ext):
+            """Find the most recently modified export file for a given target."""
+            pattern = os.path.join(base_dir, f"{prefix}_{target_clean}*.{ext}")
+            files = glob.glob(pattern)
+            # Exclude consolidated files
+            files = [f for f in files if "consolidated" not in os.path.basename(f)]
+            if not files:
+                return None
+            return max(files, key=os.path.getmtime)
+
+        def _build_case_from_disk(target, base_dir):
+            """Read siem + integrity + soar files from disk and build a rich case dict."""
+            target_clean = "".join([c if c.isalnum() else "_" for c in target])
+
+            case = {
+                "target": target,
+                "risk_score": "INFO",
+                "integrity_conflict": False,
+                "analysis": "",
+                "confidence_score": 0.5,
+                "sources": [],
+            }
+
+            # ── 1. Read SIEM JSON ──────────────────────────────────────────────
+            siem_json = {}
+            siem_file = _find_latest_export(base_dir, "siem", target_clean, "json")
+            if siem_file:
                 try:
-                    # For now, just indicate report exists
-                    story.append(Paragraph(f"✓ Laporan individual tersedia: {os.path.basename(report_path)}", styles['Normal']))
+                    with open(siem_file, "r", encoding="utf-8") as f:
+                        siem_json = json.load(f)
+                    sentinel_block = siem_json.get("sentinel", {})
+                    case["integrity_conflict"] = sentinel_block.get("integrity_conflict", False)
+                    case["confidence_score"]   = sentinel_block.get("aggregate_confidence", 0.5)
+                    case["sources"]            = sentinel_block.get("active_sources", [])
+                    print(f"DEBUG: Loaded SIEM for {target}: {siem_file}")
                 except Exception as e:
-                    story.append(Paragraph(f"⚠ Error loading report: {str(e)}", styles['Normal']))
-            else:
-                story.append(Paragraph(f"⚠ Laporan individual tidak ditemukan untuk target: {target}", styles['Normal']))
-            
-            story.append(Spacer(1, 12))
-            
-            if i < len(request.targets):
-                story.append(PageBreak())
-        
-        # Build PDF with error handling
-        try:
-            print(f"DEBUG: Building PDF with {len(story)} story elements")
-            doc.build(story)
-            print(f"DEBUG: PDF successfully built at: {consolidated_path}")
-            
-            # Verify PDF was created
-            if not os.path.exists(consolidated_path):
-                raise Exception("PDF file was not created after doc.build()")
-                
-            pdf_size = os.path.getsize(consolidated_path)
-            print(f"DEBUG: PDF file size: {pdf_size} bytes")
-            
-        except Exception as pdf_error:
-            print(f"ERROR: PDF build failed: {pdf_error}")
-            raise Exception(f"PDF generation failed: {str(pdf_error)}")
+                    print(f"Warning: Could not read SIEM file for {target}: {e}")
+
+            # ── 2. Read Integrity JSON ─────────────────────────────────────────
+            integrity_json = {}
+            integrity_file = _find_latest_export(base_dir, "integrity", target_clean, "json")
+            if integrity_file:
+                try:
+                    with open(integrity_file, "r", encoding="utf-8") as f:
+                        integrity_json = json.load(f)
+                    # consensus_severity from integrity is the most reliable risk_score
+                    consensus = integrity_json.get("consensus_severity", "")
+                    if consensus:
+                        case["risk_score"] = consensus.upper()
+                    case["integrity_conflict"] = integrity_json.get("integrity_conflict_detected", case["integrity_conflict"])
+                    if not case["confidence_score"]:
+                        case["confidence_score"] = integrity_json.get("aggregate_confidence", 0.5)
+                    print(f"DEBUG: Loaded Integrity for {target}: {integrity_file}")
+                except Exception as e:
+                    print(f"Warning: Could not read Integrity file for {target}: {e}")
+
+            # ── 3. Read SOAR Markdown ──────────────────────────────────────────
+            soar_content = ""
+            soar_file = _find_latest_export(base_dir, "soar", target_clean, "md")
+            if soar_file:
+                try:
+                    with open(soar_file, "r", encoding="utf-8") as f:
+                        soar_content = f.read()
+                    print(f"DEBUG: Loaded SOAR for {target}: {soar_file}")
+                except Exception as e:
+                    print(f"Warning: Could not read SOAR file for {target}: {e}")
+
+            # ── 4. Build rich analysis narrative ──────────────────────────────
+            sources_str = ", ".join(case["sources"]) if case["sources"] else "Tidak diketahui"
+            provenance   = siem_json.get("sentinel", {}).get("provenance", {})
+            tactics      = siem_json.get("threat", {}).get("tactic", {}).get("name", [])
+            techniques   = siem_json.get("threat", {}).get("technique", {}).get("id", [])
+            tech_names   = siem_json.get("threat", {}).get("technique", {}).get("name", [])
+            recommended  = siem_json.get("recommended_actions", [])
+            conflict_summary = siem_json.get("sentinel", {}).get("conflict_summary", "")
+
+            analysis = f"### Ringkasan Analisis\n\n"
+            analysis += f"**Target:** {target}\n"
+            analysis += f"**Skor Risiko:** {case['risk_score']}\n"
+            analysis += f"**Sumber Aktif:** {sources_str}\n"
+            analysis += f"**Confidence Score:** {case['confidence_score']:.2f}\n"
+            analysis += f"**Konflik Integritas:** {'⚠ YA' if case['integrity_conflict'] else 'Tidak'}\n\n"
+
+            if provenance:
+                analysis += "### Provenance & Sumber Data\n"
+                for src, ts in provenance.items():
+                    analysis += f"- **{src}**: diakses {ts}\n"
+                analysis += "\n"
+
+            # Conflict details
+            conflicts = integrity_json.get("conflicts", [])
+            if conflicts:
+                analysis += "### Konflik Intelijen Terdeteksi\n"
+                for c in conflicts:
+                    analysis += (
+                        f"- **{c.get('source_a','?')}** [{c.get('severity_a','?')}] vs "
+                        f"**{c.get('source_b','?')}** [{c.get('severity_b','?')}] — "
+                        f"Delta: {c.get('delta','?')} | {c.get('description','')}\n"
+                    )
+                analysis += "\n"
+            elif conflict_summary:
+                analysis += f"### Catatan Konflik\n{conflict_summary}\n\n"
+
+            # MITRE ATT&CK
+            if tactics or techniques:
+                analysis += "### MITRE ATT&CK Mapping\n"
+                if tactics:
+                    analysis += f"- **Tactics:** {', '.join(tactics)}\n"
+                if techniques:
+                    pairs = [f"{t} ({n})" for t, n in zip(techniques, tech_names) if t]
+                    if pairs:
+                        analysis += f"- **Techniques:** {', '.join(pairs)}\n"
+                analysis += "\n"
+
+            # Recommended actions
+            if recommended:
+                analysis += "### Rekomendasi Tindakan\n"
+                for action in recommended:
+                    analysis += f"- {action}\n"
+                analysis += "\n"
+
+            # Append sanitized SOAR playbook as appendix
+            if soar_content:
+                # Sanitize SOAR content to remove internal artifacts
+                from reporting import _sanitize_text
+                sanitized_soar = _sanitize_text(soar_content)
+                analysis += "---\n\n### Lampiran: SOAR Playbook\n\n"
+                analysis += sanitized_soar
+
+            case["analysis"] = analysis
+            return case
+
+        # Build cases from disk files
+        cases = []
+        for target in request.targets:
+            try:
+                case = _build_case_from_disk(target, export_dir)
+                cases.append(case)
+                print(f"DEBUG: Case built for {target}: risk={case['risk_score']}, conflict={case['integrity_conflict']}")
+            except Exception as e:
+                print(f"Warning: Failed to build case for {target}: {e}")
+                cases.append({
+                    "target": target,
+                    "risk_score": "INFO",
+                    "integrity_conflict": False,
+                    "analysis": f"Error membaca data untuk target {target}: {str(e)}",
+                    "confidence_score": 0.0,
+                    "sources": [],
+                })
+
+        # Generate consolidated PDF
+        consolidated_data = {
+            "title": "Laporan Konsolidasi Intelijen Ancaman SENTINEL",
+            "cases": cases,
+        }
+
+        generator = ConsolidatedReportGenerator(consolidated_path)
+        generator.generate(consolidated_data)
+
+        print(f"DEBUG: Consolidated PDF generated at: {consolidated_path}")
+
+        if not os.path.exists(consolidated_path):
+            raise Exception("Consolidated PDF was not created")
+
+        pdf_size = os.path.getsize(consolidated_path)
+        print(f"DEBUG: Consolidated PDF size: {pdf_size} bytes")
         
         # Generate 4 consolidated outputs
         consolidated_siem = f"siem_consolidated_{clean_targets}_{timestamp}.json"
         consolidated_soar = f"soar_consolidated_{clean_targets}_{timestamp}.md"
         consolidated_integrity = f"integrity_consolidated_{clean_targets}_{timestamp}.json"
         
-        # Create consolidated SIEM file with safety checks
+        # Build consolidated SIEM, SOAR, Integrity from the already-loaded cases
+        sev_dist = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0, "INFO": 0}
+        for c in cases:
+            rs = c.get("risk_score", "INFO").upper()
+            sev_dist[rs] = sev_dist.get(rs, 0) + 1
+
         siem_data = {
             "consolidated_analysis": True,
             "targets": request.targets,
             "timestamp": datetime.now(WIB).strftime("%d-%b-%Y %H:%M WIB"),
-            "total_iocs": len(request.targets),
-            "severity_distribution": {"HIGH": 0, "MEDIUM": 0, "LOW": 0, "INFO": 0},
-            "indicators": []
+            "total_iocs": len(cases),
+            "severity_distribution": sev_dist,
+            "indicators": [
+                {
+                    "target": c["target"],
+                    "risk_score": c["risk_score"],
+                    "integrity_conflict": c["integrity_conflict"],
+                    "confidence_score": c["confidence_score"],
+                    "active_sources": c["sources"],
+                }
+                for c in cases
+            ],
         }
-        
-        # Calculate severity distribution from task_results with safety checks
-        for target in request.targets:
-            target_result = task_results.get(target)
-            if target_result and isinstance(target_result, dict):
-                risk_score = target_result.get("risk_score", "INFO")
-                if risk_score in siem_data["severity_distribution"]:
-                    siem_data["severity_distribution"][risk_score] += 1
-                else:
-                    siem_data["severity_distribution"]["INFO"] += 1
-        
-        # Create consolidated SOAR file
-        soar_content = f"""# Consolidated SOAR Playbook
-Generated: {datetime.now(WIB).strftime('%d %B %Y, %H:%M WIB')}
-Targets: {', '.join(request.targets)}
 
-## Executive Summary
-Multi-threat analysis completed for {len(request.targets)} indicators.
+        # Consolidated SOAR — merge all per-target playbooks
+        soar_lines = [
+            f"# Consolidated SOAR Playbook — SENTINEL CTI Engine",
+            f"**Generated:** {datetime.now(WIB).strftime('%d %B %Y, %H:%M WIB')}",
+            f"**Targets ({len(cases)}):** {', '.join(request.targets)}",
+            "",
+            "---",
+            "",
+            "## Ikhtisar Risiko",
+        ]
+        for c in cases:
+            conflict_flag = "⚠️ YA" if c["integrity_conflict"] else "Tidak"
+            soar_lines.append(f"- **{c['target']}** — Risk: `{c['risk_score']}` | Konflik: {conflict_flag} | Confidence: {c['confidence_score']:.2f}")
+        soar_lines.append("")
+        soar_lines.append("---")
+        soar_lines.append("")
 
-## Response Actions
-1. Monitor all indicators across SIEM platforms
-2. Implement network segmentation for high-risk IoCs
-3. Conduct threat hunting based on identified TTPs
+        for i, c in enumerate(cases, 1):
+            target_clean_s = "".join([ch if ch.isalnum() else "_" for ch in c["target"]])
+            soar_file_i = _find_latest_export(export_dir, "soar", target_clean_s, "md")
+            soar_lines.append(f"## Target {i}: {c['target']}")
+            if soar_file_i:
+                try:
+                    with open(soar_file_i, "r", encoding="utf-8") as sf:
+                        soar_lines.append(sf.read())
+                except Exception:
+                    soar_lines.append(f"_(SOAR playbook tidak dapat dibaca)_")
+            else:
+                soar_lines.append(f"_(Tidak ada SOAR playbook untuk target ini)_")
+            soar_lines.append("")
+            soar_lines.append("---")
+            soar_lines.append("")
 
-## MITRE ATT&CK Techniques
-- T1071: Application Layer Protocol
-- T1059: Command and Scripting Interpreter
-- T1204: User Execution
+        soar_content = "\n".join(soar_lines)
 
-## Containment Procedures
-1. Isolate affected endpoints
-2. Block malicious domains/IPs
-3. Update detection rules
-"""
-        
-        # Create consolidated integrity file with safety checks
+        # Consolidated integrity — merge all per-target conflict reports
+        total_conflicts = sum(1 for c in cases if c["integrity_conflict"])
+        all_conflicts = []
+        all_confidence = {}
+        for c in cases:
+            all_confidence[c["target"]] = c["confidence_score"]
+            target_clean_i = "".join([ch if ch.isalnum() else "_" for ch in c["target"]])
+            int_file_i = _find_latest_export(export_dir, "integrity", target_clean_i, "json")
+            if int_file_i:
+                try:
+                    with open(int_file_i, "r", encoding="utf-8") as jf:
+                        int_d = json.load(jf)
+                    for cf in int_d.get("conflicts", []):
+                        cf["target"] = c["target"]
+                        all_conflicts.append(cf)
+                except Exception:
+                    pass
+
         integrity_data = {
             "consolidated_analysis": True,
             "targets": request.targets,
             "timestamp": datetime.now(WIB).strftime("%d-%b-%Y %H:%M WIB"),
-            "total_conflicts": 0,
-            "conflicts": [],
-            "confidence_scores": {},
-            "notes": "Consolidated integrity report for multi-TC analysis"
+            "total_conflicts": total_conflicts,
+            "conflicts": all_conflicts,
+            "confidence_scores": all_confidence,
+            "notes": "Consolidated integrity report — semua konflik lintas feed dari ketiga threat case.",
         }
-        
-        # Calculate total conflicts from task_results with safety checks
-        for target in request.targets:
-            target_result = task_results.get(target)
-            if target_result and isinstance(target_result, dict):
-                if target_result.get("integrity_conflict"):
-                    integrity_data["total_conflicts"] += 1
         
         # Save consolidated files with debug info
         try:
@@ -470,16 +597,16 @@ Multi-threat analysis completed for {len(request.targets)} indicators.
             integrity_path = os.path.join(export_dir, consolidated_integrity)
             
             print(f"DEBUG: Saving SIEM to: {siem_path}")
-            with open(siem_path, "w") as f:
-                json.dump(siem_data, f, indent=2)
+            with open(siem_path, "w", encoding="utf-8") as f:
+                json.dump(siem_data, f, indent=2, ensure_ascii=False)
                 
             print(f"DEBUG: Saving SOAR to: {soar_path}")
-            with open(soar_path, "w") as f:
+            with open(soar_path, "w", encoding="utf-8") as f:
                 f.write(soar_content)
                 
             print(f"DEBUG: Saving Integrity to: {integrity_path}")
-            with open(integrity_path, "w") as f:
-                json.dump(integrity_data, f, indent=2)
+            with open(integrity_path, "w", encoding="utf-8") as f:
+                json.dump(integrity_data, f, indent=2, ensure_ascii=False)
             
             # Verify all files exist
             for file_path, name in [(siem_path, "SIEM"), (soar_path, "SOAR"), (integrity_path, "Integrity")]:
@@ -493,6 +620,13 @@ Multi-threat analysis completed for {len(request.targets)} indicators.
             print(f"ERROR: File saving failed: {file_error}")
             raise Exception(f"Consolidated file creation failed: {str(file_error)}")
         
+        print(f"DEBUG: Consolidation completed successfully")
+        print(f"DEBUG: Files generated:")
+        print(f"  - PDF: {consolidated_filename}")
+        print(f"  - SIEM: {consolidated_siem}")
+        print(f"  - SOAR: {consolidated_soar}")
+        print(f"  - Integrity: {consolidated_integrity}")
+        
         return {
             "status": "success",
             "consolidated_files": {
@@ -502,10 +636,15 @@ Multi-threat analysis completed for {len(request.targets)} indicators.
                 "integrity_file": consolidated_integrity
             },
             "targets_analyzed": request.targets,
-            "timestamp": timestamp
+            "timestamp": timestamp,
+            "cases_processed": len(cases)
         }
         
     except Exception as e:
+        import traceback
+        error_detail = traceback.format_exc()
+        print(f"ERROR: Consolidation failed with exception:")
+        print(error_detail)
         raise HTTPException(status_code=500, detail=f"Consolidation failed: {str(e)}")
 
 

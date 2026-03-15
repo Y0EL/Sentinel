@@ -1,5 +1,5 @@
 {
-    "@timestamp": "2026-03-15T06:18:49.353569+00:00",
+    "@timestamp": "2026-03-15T09:41:16.253483+00:00",
     "event": {
         "kind": "alert",
         "category": [
@@ -56,8 +56,8 @@
         "visual_artefacts_detected": false,
         "reasoning_chain": "",
         "provenance": {
-            "VirusTotal": "15-Mar-2026 13:17 WIB",
-            "Simulation Trap": "15-Mar-2026 13:17 WIB"
+            "VirusTotal": "15-Mar-2026 16:39 WIB",
+            "Simulation Trap": "15-Mar-2026 16:40 WIB"
         }
     },
     "affected_assets": [

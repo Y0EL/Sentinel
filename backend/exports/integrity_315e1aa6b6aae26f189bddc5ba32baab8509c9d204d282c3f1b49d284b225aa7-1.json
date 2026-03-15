@@ -1,0 +1,43 @@
+{
+    "target": "315e1aa6b6aae26f189bddc5ba32baab8509c9d204d282c3f1b49d284b225aa7",
+    "analysis_timestamp": "15-Mar-2026 16:50 WIB",
+    "active_sources": [
+        "VirusTotal",
+        "MalwareBazaar",
+        "URLhaus"
+    ],
+    "integrity_conflict_detected": true,
+    "conflict_count": 3,
+    "conflicts": [
+        {
+            "type": "SEVERITY_MINOR_DISCREPANCY",
+            "source_a": "VirusTotal",
+            "severity_a": "CRITICAL",
+            "source_b": "MalwareBazaar",
+            "severity_b": "HIGH",
+            "delta": 1,
+            "description": "Minor discrepancy: VirusTotal=CRITICAL, MalwareBazaar=HIGH. Confidence adjustment applied."
+        },
+        {
+            "type": "SEVERITY_DISCREPANCY",
+            "source_a": "VirusTotal",
+            "severity_a": "CRITICAL",
+            "source_b": "URLhaus",
+            "severity_b": "MEDIUM",
+            "delta": 2,
+            "description": "VirusTotal rates this IoC as CRITICAL while URLhaus rates it as MEDIUM. Severity delta = 2. Manual analyst review required."
+        },
+        {
+            "type": "SEVERITY_MINOR_DISCREPANCY",
+            "source_a": "MalwareBazaar",
+            "severity_a": "HIGH",
+            "source_b": "URLhaus",
+            "severity_b": "MEDIUM",
+            "delta": 1,
+            "description": "Minor discrepancy: MalwareBazaar=HIGH, URLhaus=MEDIUM. Confidence adjustment applied."
+        }
+    ],
+    "aggregate_confidence": 0.75,
+    "consensus_severity": "CRITICAL",
+    "notes": "Integrity conflicts represent disagreements between CTI feed severity assessments. They do NOT automatically elevate or reduce risk — analyst review required."
+}

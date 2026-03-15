@@ -1,16 +1,13 @@
 {
     "target": "1.1.1.1",
-    "analysis_timestamp": "15-Mar-2026 13:28 WIB",
+    "analysis_timestamp": "15-Mar-2026 16:53 WIB",
     "active_sources": [
-        "VirusTotal",
-        "MalwareBazaar",
-        "URLhaus",
-        "TAXII/STIX"
+        "VirusTotal"
     ],
     "integrity_conflict_detected": false,
     "conflict_count": 0,
     "conflicts": [],
-    "aggregate_confidence": 0.9,
+    "aggregate_confidence": 0.85,
     "consensus_severity": "LOW",
     "notes": "All active CTI sources are in agreement on this indicator's risk level."
 }

@@ -1,0 +1,49 @@
+{
+  "consolidated_analysis": true,
+  "targets": [
+    "1daf7482d700536bc5dfe45c763dad99123e41f0be205415d708b70e6dcbfbb2",
+    "e23585aefbb887977440af86195fe0ebf7763e10f2255217dbde7c1545de0a27",
+    "8.8.8.8"
+  ],
+  "timestamp": "15-Mar-2026 16:41 WIB",
+  "total_iocs": 3,
+  "severity_distribution": {
+    "CRITICAL": 1,
+    "HIGH": 1,
+    "MEDIUM": 1,
+    "LOW": 0,
+    "INFO": 0
+  },
+  "indicators": [
+    {
+      "target": "1daf7482d700536bc5dfe45c763dad99123e41f0be205415d708b70e6dcbfbb2",
+      "risk_score": "MEDIUM",
+      "integrity_conflict": false,
+      "confidence_score": 0.5,
+      "active_sources": [
+        "VirusTotal",
+        "MalwareBazaar"
+      ]
+    },
+    {
+      "target": "e23585aefbb887977440af86195fe0ebf7763e10f2255217dbde7c1545de0a27",
+      "risk_score": "HIGH",
+      "integrity_conflict": false,
+      "confidence_score": 0.5,
+      "active_sources": [
+        "VirusTotal",
+        "MalwareBazaar"
+      ]
+    },
+    {
+      "target": "8.8.8.8",
+      "risk_score": "CRITICAL",
+      "integrity_conflict": true,
+      "confidence_score": 0.5,
+      "active_sources": [
+        "VirusTotal",
+        "Simulation Trap"
+      ]
+    }
+  ]
+}
