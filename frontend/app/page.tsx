@@ -1,1236 +1,1207 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, DragEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ShieldCheck, Search, Activity, FileText, Cpu,
-  Download, AlertTriangle, CheckCircle2, Clock,
-  Zap, Terminal, Radio, Database, Eye, GitMerge,
-  Shield, Info,
+  Shield, Search, AlertTriangle, CheckCircle2, Download, FileText,
+  Activity, ChevronDown, Bot, FileJson, Info, Zap, Check, Eye,
+  EyeOff, Globe, Database, Layers, FileBarChart, Loader2, X,
+  Image as ImageIcon, File as FileIcon, Hash, Upload, Cpu,
 } from "lucide-react";
 
-// ─── Agent Config ─────────────────────────────────────────────────────────────
-type AgentKey = "COLLECTOR" | "VISUAL" | "FUSION" | "SIEM" | "REPORTER";
+// ─── Types ─────────────────────────────────────────────────────────────────────
+type InputMode = "text" | "file";
+type FileKind  = "image" | "pdf";
 
-const AGENTS = [
-  {
-    key: "COLLECTOR" as AgentKey,
-    name: "OSINT Collector",
-    role: "Pengumpulan Intelijen",
-    emoji: "🔍",
-    initial: "O",
-    icon: Search,
-    accent: "#2563eb",
-    accentBg: "#eff6ff",
-    accentBorder: "#bfdbfe",
-    shortName: "COLLECTOR",
-    willDo: "Mengumpulkan data dari VirusTotal, MalwareBazaar, URLhaus, dan TAXII/STIX secara paralel",
-    stageName: "Koleksi OSINT",
-  },
-  {
-    key: "VISUAL" as AgentKey,
-    name: "Visual Analyst",
-    role: "Forensik Artefak",
-    emoji: "🖼️",
-    initial: "V",
-    icon: Eye,
-    accent: "#7c3aed",
-    accentBg: "#f5f3ff",
-    accentBorder: "#ddd6fe",
-    shortName: "VISUAL",
-    willDo: "Menganalisis artefak visual (screenshot, gambar malware) dan mengekstrak IoC",
-    stageName: "Analisis Visual",
-  },
-  {
-    key: "FUSION" as AgentKey,
-    name: "Threat Fusion",
-    role: "Korelasi Silang",
-    emoji: "⚡",
-    initial: "F",
-    icon: GitMerge,
-    accent: "#d97706",
-    accentBg: "#fffbeb",
-    accentBorder: "#fde68a",
-    shortName: "FUSION",
-    willDo: "Mengkorelasikan temuan lintas sumber — mendeteksi konflik intelijen antar feed",
-    stageName: "Fusi & Validasi",
-  },
-  {
-    key: "SIEM" as AgentKey,
-    name: "SIEM / SOAR",
-    role: "SOC Operations",
-    emoji: "🛡️",
-    initial: "S",
-    icon: Shield,
-    accent: "#16a34a",
-    accentBg: "#f0fdf4",
-    accentBorder: "#bbf7d0",
-    shortName: "SIEM",
-    willDo: "Menghasilkan alert ECS SIEM dan playbook SOAR dengan pemetaan MITRE ATT&CK",
-    stageName: "SIEM/SOAR Export",
-  },
-  {
-    key: "REPORTER" as AgentKey,
-    name: "Intel Reporter",
-    role: "Laporan LIA Final",
-    emoji: "📋",
-    initial: "R",
-    icon: FileText,
-    accent: "#dc2626",
-    accentBg: "#fff5f5",
-    accentBorder: "#fecaca",
-    shortName: "REPORTER",
-    willDo: "Menyusun Laporan Intelijen Ancaman (LIA) formal dalam Bahasa Indonesia",
-    stageName: "Pelaporan LIA",
-  },
-] as const;
+interface DroppedFile {
+  file: File;
+  kind: FileKind;
+  preview?: string; // object URL for images
+}
 
-const CTI_SOURCES = [
-  { name: "VirusTotal", icon: "🔬", color: "#2563eb", desc: "Multi-engine scan" },
-  { name: "MalwareBazaar", icon: "🦠", color: "#dc2626", desc: "Hash intelligence" },
-  { name: "URLhaus", icon: "🌐", color: "#7c3aed", desc: "Malicious URLs" },
-  { name: "TAXII/STIX", icon: "📡", color: "#16a34a", desc: "STIX indicators" },
-  { name: "Sim. Trap (TC3)", icon: "🪤", color: "#d97706", desc: "Integrity check" },
-];
-
-type AgentState = "pending" | "thinking" | "done";
-
-interface AgentStatus {
-  state: AgentState;
-  message: string;
-  thoughts: string[];
-  completedAt?: string;
+interface AgentThought {
+  id: string; role: string; content: string;
+  timestamp: string; isComplete: boolean; stageIndex: number;
 }
 
 interface AnalysisResult {
-  risk_score: string;
-  integrity_conflict: boolean;
-  report_file: string;
-  siem_file: string;
-  soar_file: string;
-  integrity_file: string;
+  target: string; result: string; report_file: string;
+  siem_file: string; soar_file: string; integrity_file: string;
+  risk_score: string; integrity_conflict: boolean; status: string;
 }
 
-// ─── Markdown inline renderer ─────────────────────────────────────────────────
-function renderMarkdown(text: string): React.ReactNode {
-  if (!text) return null;
-  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|__[^_]+__|_[^_]+_)/g);
-  return (
-    <>
-      {parts.map((part, i) => {
-        if (/^\*\*(.+)\*\*$/.test(part) || /^__(.+)__$/.test(part)) {
-          const inner = part.slice(2, -2);
-          return <strong key={i} style={{ fontWeight: 700, color: "inherit" }}>{inner}</strong>;
-        }
-        if (/^\*(.+)\*$/.test(part) || /^_(.+)_$/.test(part)) {
-          const inner = part.slice(1, -1);
-          return <em key={i}>{inner}</em>;
-        }
-        return <React.Fragment key={i}>{part}</React.Fragment>;
-      })}
-    </>
-  );
-}
+// ─── Constants ─────────────────────────────────────────────────────────────────
+const MISSION_STAGES = [
+  { id: 1, label: "Pengumpulan OSINT",   icon: Globe,        color: "text-sky-600",    bg: "bg-sky-50",    border: "border-sky-200",    pill: "bg-sky-100" },
+  { id: 2, label: "Pemindaian Visual",   icon: Eye,          color: "text-violet-600", bg: "bg-violet-50", border: "border-violet-200", pill: "bg-violet-100" },
+  { id: 3, label: "Fusi Intelijen",      icon: Cpu,          color: "text-amber-600",  bg: "bg-amber-50",  border: "border-amber-200",  pill: "bg-amber-100" },
+  { id: 4, label: "Operasi Defensif",    icon: Database,     color: "text-emerald-600",bg: "bg-emerald-50",border: "border-emerald-200",pill: "bg-emerald-100" },
+  { id: 5, label: "Pelaporan LIA",       icon: FileBarChart, color: "text-rose-600",   bg: "bg-rose-50",   border: "border-rose-200",   pill: "bg-rose-100" },
+];
 
-// ─── Humanized thinking phrases per agent ─────────────────────────────────────
-const THINKING_PHRASES: Record<string, string[]> = {
-  COLLECTOR: [
-    "Hmm menarik, mari saya cek VirusTotal dulu...",
-    "Sepertinya saya ingin mencoba MalwareBazaar untuk hash ini...",
-    "Sedang mengumpulkan data dari beberapa sumber OSINT...",
-    "URLhaus dan TAXII sedang diakses paralel — tunggu sebentar...",
-    "Menemukan sesuatu yang menarik, sedang diverifikasi...",
-  ],
-  VISUAL: [
-    "Ah, ada artefak visual — biar saya analisis dengan teliti...",
-    "Hmm, sedang mengekstrak teks dan pola dari gambar ini...",
-    "Menarik sekali, mari saya cermati lebih dalam...",
-    "Sedang mendeteksi IoC dari artefak visual...",
-  ],
-  FUSION: [
-    "Sepertinya ada inkonsistensi antar sumber — saya sedang menginvestigasi...",
-    "Hmm, data dari beberapa feed tidak sinkron. Saya perlu korelasikan...",
-    "Sedang menghitung confidence score dari semua sumber...",
-    "Menarik — VirusTotal dan Abuse.ch punya penilaian berbeda. Mari saya analisis...",
-  ],
-  SIEM: [
-    "Baik, saya siapkan payload ECS untuk SIEM...",
-    "Sedang memetakan TTP ke framework MITRE ATT&CK...",
-    "Sepertinya ancaman ini butuh playbook respons khusus...",
-    "Menyusun draft SOAR playbook berdasarkan temuan...",
-  ],
-  REPORTER: [
-    "Hmm, semua data sudah terkumpul. Mari saya rangkum dengan baik...",
-    "Sepertinya ini kasus yang kompleks — laporan harus komprehensif...",
-    "Sedang menyusun narasi ancaman dalam Bahasa Indonesia formal...",
-    "Hampir selesai — menyusun executive summary dan rekomendasi...",
-  ],
+const ROLE_STAGE_MAP: Record<string, number> = {
+  COLLECTOR: 1, LEAD: 1, VISUAL: 2, SPECIALIST: 2,
+  FUSION: 3, CONFLICT: 3, INTEGRITY: 3,
+  SIEM: 4, SOAR: 4, OPERATIONS: 4,
+  REPORTER: 5, STRATEGIC: 5,
 };
 
-// ─── Loading Spinner (circle) ────────────────────────────────────────────────
-function LoadingSpinner({ size = 14, color = "#d97706" }: { size?: number; color?: string }) {
-  return (
-    <svg
-      width={size} height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      style={{ animation: "spin 0.8s linear infinite", flexShrink: 0 }}
-      role="status"
-    >
-      <circle cx="12" cy="12" r="10" stroke={color} strokeWidth="3" strokeOpacity="0.2" />
-      <path d="M12 2a10 10 0 0 1 10 10" stroke={color} strokeWidth="3" strokeLinecap="round" />
-    </svg>
-  );
+const RISK_CFG: Record<string, { badge: string; label: string; icon: string; bar: string }> = {
+  CRITICAL: { badge: "bg-red-100 text-red-700 border-red-200",       label: "KRITIS",    icon: "🔴", bar: "bg-red-500" },
+  HIGH:     { badge: "bg-orange-100 text-orange-700 border-orange-200", label: "TINGGI",  icon: "🟠", bar: "bg-orange-500" },
+  MEDIUM:   { badge: "bg-amber-100 text-amber-700 border-amber-200",   label: "SEDANG",   icon: "🟡", bar: "bg-amber-500" },
+  LOW:      { badge: "bg-green-100 text-green-700 border-green-200",   label: "RENDAH",   icon: "🟢", bar: "bg-green-500" },
+  INFO:     { badge: "bg-sky-100 text-sky-700 border-sky-200",         label: "INFO",     icon: "🔵", bar: "bg-sky-500" },
+};
+
+const AGENT_COLORS = [
+  { bg: "bg-sky-100",     text: "text-sky-700" },
+  { bg: "bg-violet-100",  text: "text-violet-700" },
+  { bg: "bg-amber-100",   text: "text-amber-700" },
+  { bg: "bg-emerald-100", text: "text-emerald-700" },
+  { bg: "bg-rose-100",    text: "text-rose-700" },
+];
+
+const ACCEPTED_TYPES = ["image/png","image/jpeg","image/jpg","image/gif","image/webp","image/bmp","application/pdf"];
+const ACCEPTED_EXT   = [".png",".jpg",".jpeg",".gif",".webp",".bmp",".pdf"];
+
+// ─── Helpers ───────────────────────────────────────────────────────────────────
+function sanitize(text: string): string {
+  return text
+    .replace(/<sentinel_update>[\s\S]*?<\/sentinel_update>/gi, "")
+    .replace(/\[STATUS:[^\]]*\]/gi, "")
+    .replace(/^---+\s*$/gm, "")
+    .replace(/^[*_]{3,}\s*$/gm, "")
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/^\s*[-*]\s+/gm, "• ")
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/\*(.*?)\*/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
-// ─── Humanized thinking bubble ────────────────────────────────────────────────
-function ThinkingBubble({ agent, text }: { agent: typeof AGENTS[number]; text: string }) {
-  const [phraseIdx, setPhraseIdx] = useState(0);
-  const phrases = THINKING_PHRASES[agent.key] ?? THINKING_PHRASES.COLLECTOR;
-  const hasActualText = text && text.length > 10;
+function extractSummary(raw: string): string {
+  if (!raw) return "";
+  const re = /Ringkasan Eksekutif[^:]*:([\s\S]*?)(?=\n#{1,3}\s|\n\*\*(?:Detail|Bukti|Laporan|Rekomen)|$)/i;
+  const m = raw.match(re);
+  if (m?.[1]?.trim().length ?? 0 > 30) return sanitize(m![1].trim());
+  const paras = raw.split(/\n\n+/).map(p => sanitize(p)).filter(p => p.length > 40 && !p.startsWith("#"));
+  return paras.slice(0, 3).join("\n\n");
+}
 
-  // Cycle through humanized thinking phrases only when no actual text
-  useEffect(() => {
-    if (hasActualText) return;
-    const t = setInterval(() => {
-      setPhraseIdx(p => (p + 1) % phrases.length);
-    }, 4000);
-    return () => clearInterval(t);
-  }, [phrases.length, hasActualText]);
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function getFileKind(file: File): FileKind | null {
+  const ext = "." + (file.name.split(".").pop() ?? "").toLowerCase();
+  if (file.type === "application/pdf" || ext === ".pdf") return "pdf";
+  if (ACCEPTED_TYPES.includes(file.type) || ACCEPTED_EXT.includes(ext)) return "image";
+  return null;
+}
+
+// ─── MarkdownText: renders **bold**, *italic*, `code` inline with sentence-based staggered fade ───
+function MarkdownText({ text, className = "" }: { text: string; className?: string }) {
+  // Break into sentences for staggered animation
+  const sentences = text.split(/(?<=[.!?])\s+/);
 
   return (
-    <div
-      className="thinking-bubble"
-      style={{ borderColor: agent.accentBorder, background: agent.accentBg }}
-    >
-      <div className="thinking-bubble-header">
-        <span style={{ color: agent.accent, fontSize: 11, fontWeight: 700 }}>Sedang berpikir...</span>
-      </div>
-      {/* Primary: actual agent message from backend STEP */}
-      {hasActualText ? (
-        <div style={{
-          fontSize: 12.5, color: agent.accent, lineHeight: 1.65,
-          fontStyle: "normal", paddingTop: 4,
-        }}>
-          {renderMarkdown(text)}
-          <span className="streaming-cursor" />
-        </div>
-      ) : (
-        /* Fallback: cycling humanized phrases */
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={phraseIdx}
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.35 }}
-            className="thinking-bubble-text"
-            style={{ color: agent.accent }}
-          >
-            &ldquo;{phrases[phraseIdx]}&rdquo;
-          </motion.div>
-        </AnimatePresence>
-      )}
+    <div className={`${className} inline-block`}>
+      {sentences.map((sentence, sIdx) => (
+        <motion.span
+          key={sIdx}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.6, delay: sIdx * 0.15, ease: "easeInOut" }}
+          className="inline-block"
+        >
+          {sentence.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g).map((tok, i) => {
+            if (tok.startsWith("**") && tok.endsWith("**") && tok.length > 4)
+              return <strong key={i} className="font-bold text-stone-800 break-all">{tok.slice(2, -2)}</strong>;
+            if (tok.startsWith("*") && tok.endsWith("*") && tok.length > 2)
+              return <em key={i} className="italic text-stone-600 break-all">{tok.slice(1, -1)}</em>;
+            if (tok.startsWith("`") && tok.endsWith("`") && tok.length > 2)
+              return <code key={i} className="px-1 py-px rounded bg-stone-100 font-mono text-[10px] text-orange-600 break-all">{tok.slice(1, -1)}</code>;
+            return <span key={i} className="break-all">{tok}</span>;
+          })}
+          {" "}
+        </motion.span>
+      ))}
     </div>
   );
 }
 
-// ─── Skeleton card (for queued agents) ───────────────────────────────────────
-function SkeletonQueueCard({ agent }: { agent: typeof AGENTS[number] }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -4 }}
-      className="tentry"
-      style={{ opacity: 0.5 }}
-    >
-      <div className="tentry-line">
-        <div className="tentry-dot-outer" style={{
-          background: "#f3f4f6",
-          borderColor: "#e5e7eb",
-        }}>
-          <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#d1d5db" }} />
-        </div>
-        <div className="tentry-connector" style={{ background: "#f3f4f6" }} />
-      </div>
-      <div className="tentry-content">
-        <div className="tentry-meta" style={{ marginBottom: 6 }}>
-          <div className="skeleton" style={{ width: 90, height: 12, borderRadius: 4 }} />
-          <div className="skeleton" style={{ width: 42, height: 10, borderRadius: 4, marginLeft: 4 }} />
-        </div>
-        <div className="skeleton" style={{ width: "100%", height: 38, borderRadius: 8 }} />
-      </div>
-    </motion.div>
-  );
-}
+// ─── Main Component ────────────────────────────────────────────────────────────
+export default function SentinelCommander() {
+  const [mode, setMode]             = useState<InputMode>("text");
+  const [analysisMode, setAnalysisMode] = useState<"single" | "multi">("single");
+  const [textTarget, setTextTarget] = useState("");
+  const [multiTargets, setMultiTargets] = useState<string[]>(["", "", ""]);
+  const [droppedFile, setDroppedFile] = useState<DroppedFile | null>(null);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [uploadError, setUploadError] = useState("");
 
-// ─── Streaming text ───────────────────────────────────────────────────────────
-function StreamingText({ text, isNew }: { text: string; isNew?: boolean }) {
-  const [shown, setShown] = useState(isNew ? "" : text);
-  const [done, setDone] = useState(!isNew);
+  const [isAnalyzing, setIsAnalyzing]   = useState(false);
+  const [thoughts, setThoughts]         = useState<AgentThought[]>([]);
+  const [result, setResult]             = useState<AnalysisResult | null>(null);
+  const [currentStage, setCurrentStage] = useState(0);
+  const [currentTargetIndex, setCurrentTargetIndex] = useState(0);
+  const [totalTargets, setTotalTargets] = useState(0);
+  const [validTargetsState, setValidTargetsState] = useState<string[]>([]);
+  const [agentProgress, setAgentProgress] = useState<{[key: number]: {stage: string, progress: number, details: string}}>({});
+  const [wsStatus, setWsStatus]         = useState<"connecting"|"connected"|"disconnected">("connecting");
+  const [logsExpanded, setLogsExpanded] = useState(false);
 
+  const wsRef       = useRef<WebSocket | null>(null);
+  const fileInputRef= useRef<HTMLInputElement>(null);
+  const liveEndRef  = useRef<HTMLDivElement>(null);
+  const resultRef   = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { if (isAnalyzing) liveEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [thoughts, isAnalyzing]);
+  useEffect(() => { if (result) setTimeout(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 400); }, [result]);
+
+  // WebSocket
   useEffect(() => {
-    if (!isNew) { setShown(text); setDone(true); return; }
-    setShown(""); setDone(false);
-    let i = 0;
-    const t = setInterval(() => {
-      setShown(text.slice(0, ++i));
-      if (i >= text.length) { clearInterval(t); setDone(true); }
-    }, 10);
-    return () => clearInterval(t);
-  }, [text, isNew]);
-
-  return (
-    <span>
-      {renderMarkdown(shown)}
-      {!done && <span className="streaming-cursor" />}
-    </span>
-  );
-}
-
-// ─── Agent sidebar pill ───────────────────────────────────────────────────────
-function AgentPill({ agent, status }: { agent: typeof AGENTS[number]; status: AgentStatus }) {
-  const isThinking = status.state === "thinking";
-  const isDone = status.state === "done";
-
-  return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, x: -6 }}
-      animate={{ opacity: 1, x: 0 }}
-      className={`agent-pill ${status.state}`}
-      style={isThinking ? ({ "--current-bg": agent.accentBg, "--current-border": agent.accentBorder } as React.CSSProperties) : undefined}
-    >
-      <div className="agent-pill-avatar" style={{
-        background: isThinking ? agent.accentBg : isDone ? "#dcfce7" : "#f3f4f6",
-        borderColor: isThinking ? agent.accentBorder : isDone ? "#86efac" : "#e5e7eb",
-        display: "flex", alignItems: "center", justifyContent: "center",
-      }}>
-        <span style={{ fontSize: 11, fontWeight: 800, color: isThinking ? agent.accent : isDone ? "#16a34a" : "#9ca3af" }}>{agent.initial}</span>
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="agent-pill-name" style={{ color: isThinking ? agent.accent : isDone ? "#16a34a" : "#374151" }}>
-          {agent.name}
-        </div>
-        <div className="agent-pill-role">{agent.role}</div>
-      </div>
-      <div className="agent-pill-status">
-        {isThinking && <LoadingSpinner color={agent.accent} />}
-        {isDone && <CheckCircle2 size={13} color="#16a34a" />}
-        {status.state === "pending" && (
-          <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#e5e7eb" }} />
-        )}
-      </div>
-    </motion.div>
-  );
-}
-
-// ─── Feed entry type ──────────────────────────────────────────────────────────
-// "queue" entries are replaced by skeleton, not rendered as text
-interface FeedEntry {
-  id: string;
-  // "thought" = active thought from agent, "done" = completed summary, "system" = separator
-  type: "thought" | "done" | "system";
-  agentKey: AgentKey;
-  text: string;
-  isLatest: boolean;
-  timestamp: string;
-}
-
-// Track which agents are queued (not yet started)
-interface QueuedAgent {
-  key: AgentKey;
-}
-
-// ─── Pipeline step component ──────────────────────────────────────────────────
-function PipelineStep({ agent, state, isCurrent }: { agent: typeof AGENTS[number]; state: AgentState; isCurrent: boolean }) {
-  return (
-    <div
-      className={`pipeline-step ${state}`}
-      style={isCurrent ? ({ "--current-accentBg": agent.accentBg, "--current-accentBorder": agent.accentBorder } as React.CSSProperties) : undefined}
-    >
-      <div className={`pipeline-dot ${state}`}>
-        {state === "done"
-          ? <CheckCircle2 size={13} color="#16a34a" strokeWidth={2.5} />
-          : state === "thinking"
-            ? <LoadingSpinner color={agent.accent} />
-            : <span style={{ fontSize: 10, color: "#9ca3af" }}>{AGENTS.findIndex(a => a.key === agent.key) + 1}</span>
-        }
-      </div>
-      <span className={`pipeline-label ${state}`}>{agent.shortName}</span>
-    </div>
-  );
-}
-
-// ─── Timeline entry ───────────────────────────────────────────────────────────
-function TimelineEntry({ entry, agent, showConnector }: { entry: FeedEntry; agent: typeof AGENTS[number]; showConnector: boolean }) {
-  const isDone = entry.type === "done";
-  const isThought = entry.type === "thought";
-  const isSystem = entry.type === "system";
-
-  if (isSystem) {
-    return (
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", opacity: 0.5 }}
-      >
-        <div style={{ flex: 1, height: 1, background: "var(--border-light)" }} />
-        <span style={{ fontSize: 9.5, fontFamily: "var(--font-mono)", color: "var(--text-300)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-          {entry.text}
-        </span>
-        <div style={{ flex: 1, height: 1, background: "var(--border-light)" }} />
-      </motion.div>
-    );
-  }
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ type: "spring", stiffness: 280, damping: 28 }}
-      className="tentry"
-    >
-      <div className="tentry-line">
-        <div className="tentry-dot-outer" style={{
-          background: isDone ? "#dcfce7" : isThought ? agent.accentBg : agent.accentBg,
-          borderColor: isDone ? "#86efac" : agent.accentBorder,
-        }}>
-          {isDone
-            ? <CheckCircle2 size={13} color="#16a34a" strokeWidth={2.5} />
-            : <span style={{ fontSize: 11, fontWeight: 800, color: agent.accent }}>{agent.initial}</span>
+    let t: NodeJS.Timeout;
+    const connect = () => {
+      setWsStatus("connecting");
+      const ws = new WebSocket("ws://localhost:8000/ws/logs");
+      wsRef.current = ws;
+      ws.onopen = () => setWsStatus("connected");
+      ws.onmessage = (ev) => {
+        try {
+          const d = JSON.parse(ev.data);
+          if (d.type === "PROGRESS") { 
+            setCurrentStage(d.stage); 
+            // Update agent progress with details
+            if (d.agent && d.details) {
+              setAgentProgress(prev => ({
+                ...prev,
+                [d.stage]: {
+                  stage: d.agent,
+                  progress: d.progress || 50,
+                  details: d.details
+                }
+              }));
+            }
+            return; 
           }
-        </div>
-        {showConnector && <div className="tentry-connector" />}
-      </div>
+          if (d.source === "agent" && d.message) {
+            setThoughts(prev => {
+              const role = (d.role || "ANALIS").toUpperCase();
+              const si = ROLE_STAGE_MAP[role] ?? 0;
+              return [...prev.map(p => ({ ...p, isComplete: true })), {
+                id: `${Date.now()}-${Math.random()}`, role, content: d.message,
+                timestamp: new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+                isComplete: false, stageIndex: si,
+              }];
+            });
+          }
+        } catch {}
+      };
+      ws.onclose = () => { setWsStatus("disconnected"); t = setTimeout(connect, 3000); };
+      ws.onerror = () => ws.close();
+    };
+    connect();
+    return () => { wsRef.current?.close(); clearTimeout(t); };
+  }, []);
 
-      <div className="tentry-content">
-        <div className="tentry-meta">
-          <span className="tentry-agent-name" style={{ color: agent.accent }}>{agent.name}</span>
-          <span className="tentry-time">{entry.timestamp}</span>
-          {isDone && (
-            <span className="tentry-type-badge" style={{ background: "#dcfce7", color: "#16a34a" }}>SELESAI</span>
-          )}
-          {isThought && (
-            <span className="tentry-type-badge" style={{ background: agent.accentBg, color: agent.accent }}>
-              BERPIKIR
-            </span>
-          )}
-        </div>
+  // ── Drag & Drop Handlers ────────────────────────────────────────────────────
+  const handleDragOver  = (e: DragEvent) => { e.preventDefault(); setIsDraggingOver(true); };
+  const handleDragLeave = (e: DragEvent) => { e.preventDefault(); setIsDraggingOver(false); };
 
-        {/* Thought: show humanized ThinkingBubble */}
-        {isThought && (
-          <ThinkingBubble agent={agent} text={entry.text} />
-        )}
-
-        {/* Done: show result card */}
-        {isDone && (
-          <div className="msg-card done-msg">
-            {renderMarkdown(entry.text)}
-          </div>
-        )}
-      </div>
-    </motion.div>
-  );
-}
-
-// ─── Main Page ────────────────────────────────────────────────────────────────
-export default function SentinelPage() {
-  const [target, setTarget] = useState("");
-  // ── Multi-target (TC1/TC2/TC3) mode ──────────────────────────────────────────
-  const [multiMode, setMultiMode] = useState(false);
-  const [tc1, setTc1] = useState("");
-  const [tc2, setTc2] = useState("");
-  const [tc3, setTc3] = useState("");
-  const [multiProgress, setMultiProgress] = useState<{ done: string[]; current: string | null; total: number }>({ done: [], current: null, total: 0 });
-  const [consolidatedFile, setConsolidatedFile] = useState<string | null>(null);
-
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [selectedImage, setSelectedImage] = useState<File | null>(null);
-  const [result, setResult] = useState<AnalysisResult | null>(null);
-  const [agentStatuses, setAgentStatuses] = useState<Map<AgentKey, AgentStatus>>(new Map());
-  const [feed, setFeed] = useState<FeedEntry[]>([]);
-  // Track queued (upcoming) agents separately — shown as skeletons
-  const [queuedAgents, setQueuedAgents] = useState<AgentKey[]>([]);
-  const [startedAt, setStartedAt] = useState<string | null>(null);
-  const [currentAgentKey, setCurrentAgentKey] = useState<AgentKey | null>(null);
-
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [feed, queuedAgents, result]);
-
-  const setAgentState = useCallback((key: AgentKey, updater: (prev: AgentStatus) => AgentStatus) => {
-    setAgentStatuses(prev => {
-      const cur = prev.get(key) ?? { state: "pending", message: "", thoughts: [] };
-      const next = new Map(prev);
-      next.set(key, updater(cur));
-      return next;
+  const handleDrop = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    setIsDraggingOver(false);
+    setUploadError("");
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    const kind = getFileKind(file);
+    if (!kind) { setUploadError(`Format tidak didukung. Gunakan: PNG, JPG, GIF, WEBP, BMP, atau PDF.`); return; }
+    setMode("file");
+    setDroppedFile({
+      file, kind,
+      preview: kind === "image" ? URL.createObjectURL(file) : undefined,
     });
   }, []);
 
-  const nowTime = () => new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-
-  // ─── WebSocket ─────────────────────────────────────────────────────────────
-  useEffect(() => {
-    const socket = new WebSocket("ws://localhost:8000/ws/logs");
-
-    socket.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data);
-
-        if (data.type === "AGENT_START") {
-          const key = data.role as AgentKey;
-          if (!AGENTS.find(a => a.key === key)) return;
-          const t = nowTime();
-
-          setCurrentAgentKey(key);
-          setAgentState(key, prev => ({ ...prev, state: "thinking" }));
-
-          // Remove this agent from queue (it's now active)
-          setQueuedAgents(q => q.filter(k => k !== key));
-
-          // Add a brief "starting" thought entry
-          setFeed(f => [
-            ...f.map(x => ({ ...x, isLatest: false })),
-            {
-              id: `${key}-start-${Date.now()}`,
-              type: "thought" as const,
-              agentKey: key,
-              text: `Memulai: ${AGENTS.find(a => a.key === key)?.willDo}`,
-              isLatest: false,
-              timestamp: t,
-            },
-          ]);
-        }
-
-        else if (data.type === "AGENT_DONE") {
-          const key = data.role as AgentKey;
-          if (!AGENTS.find(a => a.key === key)) return;
-          const t = nowTime();
-
-          setAgentState(key, prev => ({
-            ...prev,
-            state: "done",
-            message: data.message || prev.message,
-            completedAt: t,
-          }));
-
-          if (data.message) {
-            setFeed(f => {
-              // Replace all "thought" entries for this agent with a single "done" entry
-              const filtered = f.filter(x => !(x.agentKey === key && x.type === "thought"));
-              return [
-                ...filtered,
-                {
-                  id: `${key}-done-${Date.now()}`,
-                  type: "done" as const,
-                  agentKey: key,
-                  text: data.message,
-                  isLatest: false,
-                  timestamp: t,
-                },
-              ];
-            });
-          }
-        }
-
-        else if (data.type === "STEP") {
-          const roleStr = ((data.role as string) || "").toUpperCase();
-          const agent = AGENTS.find(a => a.key === roleStr || roleStr.includes(a.key));
-          if (!agent) return;
-          const key = agent.key;
-          const msg = (data.message || "").trim();
-          if (!msg) return;
-
-          const t = nowTime();
-          setAgentState(key, prev => {
-            const thoughts = [...prev.thoughts];
-            if (!thoughts.includes(msg)) thoughts.push(msg);
-            return { ...prev, state: "thinking", thoughts };
-          });
-
-          setFeed(f => {
-            const newEntry: FeedEntry = {
-              id: `${key}-thought-${Date.now()}`,
-              type: "thought",
-              agentKey: key,
-              text: msg,
-              isLatest: true,
-              timestamp: t,
-            };
-            // Accumulate up to 3 thoughts per agent — oldest drops off as new ones arrive
-            const agentThoughts = f.filter(x => x.agentKey === key && x.type === "thought");
-            let base = f.map(x => ({ ...x, isLatest: false }));
-            if (agentThoughts.length >= 3) {
-              const oldestIdx = base.findIndex(x => x.agentKey === key && x.type === "thought");
-              if (oldestIdx !== -1) base = base.filter((_, i) => i !== oldestIdx);
-            }
-            return [...base, newEntry];
-          });
-        }
-      } catch { /* ignore */ }
-    };
-
-    return () => socket.close();
-  }, [setAgentState]);
-
-  // ─── handleAnalyze ─────────────────────────────────────────────────────────
-  const handleAnalyze = async () => {
-    if (!target || isAnalyzing) return;
-    setAgentStatuses(new Map());
-    setFeed([]);
-    setResult(null);
-    setCurrentAgentKey(null);
-    setIsAnalyzing(true);
-    setStartedAt(nowTime());
-
-    // All agents start as queued (skeleton), COLLECTOR becomes active first via WS
-    setQueuedAgents(AGENTS.map(a => a.key));
-
-    let image_path = null;
-    if (selectedImage) {
-      const fd = new FormData();
-      fd.append("file", selectedImage);
-      try {
-        const r = await fetch("http://localhost:8000/upload", { method: "POST", body: fd });
-        image_path = (await r.json()).saved_path;
-      } catch { /* ignored */ }
-    }
-
-    try {
-      await fetch("http://localhost:8000/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ target, image_path }),
-      });
-      pollResult(target);
-    } catch {
-      setIsAnalyzing(false);
-    }
-  };
-
-  const pollResult = (t: string) => {
-    const iv = setInterval(async () => {
-      try {
-        const r = await fetch(`http://localhost:8000/result?target=${encodeURIComponent(t)}`);
-        if (r.status === 200) {
-          const d = await r.json();
-          if (d.status === "completed") {
-            setResult(d);
-            setIsAnalyzing(false);
-            setCurrentAgentKey(null);
-            setQueuedAgents([]);
-            clearInterval(iv);
-          } else if (d.status === "error") {
-            setIsAnalyzing(false);
-            setCurrentAgentKey(null);
-            setQueuedAgents([]);
-            clearInterval(iv);
-          }
-        }
-      } catch { /* ignored */ }
-    }, 2500);
-  };
-
-  const downloadFile = (f: string) => window.open(`http://localhost:8000/exports/${f}`, "_blank");
-
-  // ─── Multi-target sequential run ────────────────────────────────────────────────
-  const runSingleTarget = async (tgt: string, tcIdx: number = 0): Promise<void> => {
-    return new Promise(resolve => {
-      const t = nowTime();
-      setAgentStatuses(new Map());
-      setResult(null);
-      setCurrentAgentKey(null);
-      setIsAnalyzing(true);
-      setStartedAt(t);
-      setQueuedAgents(AGENTS.map(a => a.key));
-      setTarget(tgt);
-      // First target: clear history. Subsequent: append separator so all TC logs persist
-      if (tcIdx === 0) {
-        setFeed([]);
-      } else {
-        setFeed(prev => [
-          ...prev,
-          {
-            id: `sys-tc-${tcIdx}-${Date.now()}`,
-            type: "system" as const,
-            agentKey: "COLLECTOR" as AgentKey,
-            text: `TC${tcIdx + 1} — ${tgt}`,
-            isLatest: false,
-            timestamp: t,
-          },
-        ]);
-      }
-
-      fetch("http://localhost:8000/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ target: tgt, image_path: null }),
-      }).catch(() => { });
-
-      const iv = setInterval(async () => {
-        try {
-          const r = await fetch(`http://localhost:8000/result?target=${encodeURIComponent(tgt)}`);
-          const d = await r.json();
-          if (d.status === "completed" || d.status === "error") {
-            if (d.status === "completed") setResult(d);
-            setIsAnalyzing(false);
-            setCurrentAgentKey(null);
-            setQueuedAgents([]);
-            clearInterval(iv);
-            resolve();
-          }
-        } catch { /* ignore */ }
-      }, 2500);
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setUploadError("");
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const kind = getFileKind(file);
+    if (!kind) { setUploadError("Format tidak didukung."); return; }
+    setMode("file");
+    setDroppedFile({
+      file, kind,
+      preview: kind === "image" ? URL.createObjectURL(file) : undefined,
     });
   };
 
-  const handleAnalyzeMulti = async () => {
-    const targets = [tc1, tc2, tc3].map(t => t.trim()).filter(Boolean);
-    if (!targets.length || isAnalyzing) return;
-    setConsolidatedFile(null);
-    setMultiProgress({ done: [], current: targets[0], total: targets.length });
+  const clearFile = () => {
+    if (droppedFile?.preview) URL.revokeObjectURL(droppedFile.preview);
+    setDroppedFile(null);
+    setUploadError("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
 
-    for (let i = 0; i < targets.length; i++) {
-      setMultiProgress((p: { done: string[]; current: string | null; total: number }) => ({ ...p, current: targets[i] }));
-      await runSingleTarget(targets[i], i);
-      setMultiProgress((p: { done: string[]; current: string | null; total: number }) => ({ done: [...p.done, targets[i]], current: targets[i + 1] ?? null, total: p.total }));
+  // ── Submit / Analyze ────────────────────────────────────────────────────────
+  const handleAnalyze = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setUploadError("");
+    // Get targets based on mode
+    const validTargets = analysisMode === "multi" 
+      ? multiTargets.filter(t => t.trim().length > 0)
+      : [textTarget.trim()].filter(t => t.length > 0);
+
+    const hasText = validTargets.length > 0;
+    const hasFile = !!droppedFile;
+
+    if (!hasText && !hasFile) {
+      alert("Masukkan target atau upload file terlebih dahulu.");
+      return;
     }
 
-    // After all targets done — auto-consolidate
-    if (targets.length > 1) {
+    if (isAnalyzing) return;
+
+    setIsAnalyzing(true);
+    setResult(null);
+    setCurrentStage(1);
+    setLogsExpanded(false);
+
+    let analyzeTarget = validTargets[0]; // Use first valid target
+    let imagePath: string | null = null;
+
+    // ── Upload file if present ──
+    if (hasFile && droppedFile) {
+      const formData = new FormData();
+      formData.append("file", droppedFile.file);
+
       try {
-        const res = await fetch("http://localhost:8000/consolidate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ targets, title: "Laporan Konsolidasi Ancaman SENTINEL – TC1/TC2/TC3" }),
+        const upResp = await fetch("http://localhost:8000/upload", { method: "POST", body: formData });
+        if (!upResp.ok) {
+          const err = await upResp.json().catch(() => ({ detail: "Upload gagal" }));
+          setUploadError(err.detail ?? "Upload gagal");
+          setIsAnalyzing(false);
+          return;
+        }
+        const upData = await upResp.json();
+        if (upData.type === "pdf") {
+          analyzeTarget = upData.sha256;
+        } else {
+          // image: use file name as display target, pass saved_path for vision
+          analyzeTarget = hasText ? analyzeTarget : droppedFile.file.name;
+          imagePath = upData.saved_path;
+        }
+      } catch {
+        setUploadError("Tidak dapat menghubungi backend. Pastikan server berjalan.");
+        setIsAnalyzing(false);
+        return;
+      }
+    }
+
+    if (analysisMode === "multi") {
+      // Multi-TC mode - SEQUENTIAL processing
+      const displayTarget = validTargets.join(", ");
+      
+      setThoughts([{
+        id: "init", role: "SISTEM",
+        content: `Misi multi-TC dimulai untuk: ${validTargets.length} target (${displayTarget}). Memproses SATU PER SATU secara SEQUENTIAL.`,
+        timestamp: new Date().toLocaleTimeString("id-ID"), isComplete: true, stageIndex: 0,
+      }]);
+
+      try {
+        setTotalTargets(validTargets.length);
+        setValidTargetsState(validTargets);
+      const allResults = [];
+        
+        // Process EACH target one by one
+        for (let i = 0; i < validTargets.length; i++) {
+          const target = validTargets[i];
+          
+          // Reset progress untuk target baru
+          setCurrentTargetIndex(i);
+          setCurrentStage(0);
+          setAgentProgress({});
+          setThoughts(prev => [...prev, {
+            id: `start-${i}`,
+            role: "SISTEM",
+            content: `=== MEMULAI TC${i + 1}: ${target} ===\nMengatur ulang progress dan memulai tahapan operasional.`,
+            timestamp: new Date().toLocaleTimeString("id-ID"),
+            isComplete: false,
+            stageIndex: 0
+          }]);
+
+          // Submit analysis for this target
+          const resp = await fetch("http://localhost:8000/analyze", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ target, image_path: imagePath }),
+          });
+          
+          if (!resp.ok) throw new Error(`Backend Error: ${resp.status}`);
+
+          // Wait for THIS target to complete BEFORE proceeding
+          let completed = false;
+          while (!completed) {
+            const pr = await fetch(`http://localhost:8000/result?target=${encodeURIComponent(target)}`);
+            const pd = await pr.json();
+            
+            if (pd.status === "completed") {
+              allResults.push(pd);
+              setThoughts(prev => [...prev, {
+                id: `complete-${i}`,
+                role: "SISTEM",
+                content: `✓ TC${i + 1} SELESAI: ${target} - Risk: ${pd.risk_score}`,
+                timestamp: new Date().toLocaleTimeString("id-ID"),
+                isComplete: true,
+                stageIndex: 0
+              }]);
+              completed = true;
+            } else if (pd.status === "error") {
+              throw new Error(`Analysis failed for ${target}: ${pd.message}`);
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+          
+          // Small delay before next target
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+
+        // ALL targets done - NOW consolidate
+        setThoughts(prev => [...prev, {
+          id: "consolidate",
+          role: "SISTEM",
+          content: `=== SEMUA TC SELESAI. Mengkonsolidasikan ${allResults.length} hasil... ===`,
+          timestamp: new Date().toLocaleTimeString("id-ID"),
+          isComplete: false,
+          stageIndex: 0
+        }]);
+
+        // Call consolidation API
+        const consolidateResp = await fetch("http://localhost:8000/consolidate", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ targets: validTargets }),
         });
-        const data = await res.json();
-        if (data.consolidated_file) setConsolidatedFile(data.consolidated_file);
-      } catch { /* ignore */ }
+        
+        if (!consolidateResp.ok) throw new Error(`Consolidation failed: ${consolidateResp.status}`);
+        
+        const consolidateData = await consolidateResp.json();
+        
+        // Safety check for consolidation response
+        if (!consolidateData.consolidated_files) {
+          throw new Error("Consolidation response missing file data");
+        }
+        
+        // Final consolidated result with safety checks
+        const consolidatedResult = {
+          target: validTargets.join(", "),
+          result: `Consolidated analysis of ${allResults.length} targets completed.`,
+          report_file: consolidateData.consolidated_files.report_file || null,
+          siem_file: consolidateData.consolidated_files.siem_file || null,
+          soar_file: consolidateData.consolidated_files.soar_file || null,
+          integrity_file: consolidateData.consolidated_files.integrity_file || null,
+          risk_score: "MEDIUM",
+          integrity_conflict: false,
+          status: "completed"
+        };
+        
+        setResult(consolidatedResult);
+        setIsAnalyzing(false);
+        setCurrentStage(6);
+        
+        setThoughts(prev => [...prev, {
+          id: "final",
+          role: "SISTEM", 
+          content: `=== MULTI-TC ANALYSIS SELESAI! ===\n${allResults.length} target diproses secara sequential.\n4 consolidated files siap di-download.`,
+          timestamp: new Date().toLocaleTimeString("id-ID"),
+          isComplete: true,
+          stageIndex: 0
+        }]);
+        
+      } catch (error) {
+        setIsAnalyzing(false);
+        alert("Multi-TC analysis gagal: " + (error instanceof Error ? error.message : String(error)));
+      }
+    } else {
+      // Single mode (existing logic)
+      const displayTarget = analyzeTarget;
+      setThoughts([{
+        id: "init", role: "SISTEM",
+        content: `Misi strategis dimulai untuk: ${displayTarget}${imagePath ? " (dengan artefak visual)" : ""}. Menyiapkan unit agen intelijen khusus.`,
+        timestamp: new Date().toLocaleTimeString("id-ID"), isComplete: true, stageIndex: 0,
+      }]);
+
+      try {
+        const resp = await fetch("http://localhost:8000/analyze", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ target: analyzeTarget, image_path: imagePath }),
+        });
+        if (!resp.ok) throw new Error(`Backend Error: ${resp.status}`);
+
+        const pollInterval = setInterval(async () => {
+          try {
+            const pr = await fetch(`http://localhost:8000/result?target=${encodeURIComponent(analyzeTarget)}`);
+            const pd = await pr.json();
+            if (pd.status === "completed") {
+              setThoughts(prev => prev.map(t => ({ ...t, isComplete: true })));
+              setResult(pd); setIsAnalyzing(false); setCurrentStage(6);
+              clearInterval(pollInterval);
+            } else if (pd.status === "error") {
+              setIsAnalyzing(false); clearInterval(pollInterval);
+              alert("Misi Gagal: " + pd.message);
+            }
+          } catch {}
+        }, 2000);
+      } catch {
+        setIsAnalyzing(false);
+        alert("Koneksi backend gagal. Pastikan server berjalan di http://localhost:8000");
+      }
     }
   };
 
-  // ─── Risk colors ───────────────────────────────────────────────────────────────────
-  const RISK_COLORS: Record<string, { bg: string; text: string; border: string; label: string }> = {
-    CRITICAL: { bg: "#fff1f2", text: "#dc2626", border: "#fecaca", label: "KRITIS" },
-    HIGH: { bg: "#fffbeb", text: "#d97706", border: "#fde68a", label: "TINGGI" },
-    MEDIUM: { bg: "#eff6ff", text: "#2563eb", border: "#bfdbfe", label: "SEDANG" },
-    LOW: { bg: "#f0fdf4", text: "#16a34a", border: "#bbf7d0", label: "RENDAH" },
-    INFO: { bg: "#f8fafc", text: "#64748b", border: "#e2e8f0", label: "INFO" },
-  };
+  // ── Derived ─────────────────────────────────────────────────────────────────
+  const riskCfg = result ? (RISK_CFG[result.risk_score] ?? RISK_CFG.INFO) : null;
+  const summary = result ? extractSummary(result.result) : "";
+  const systemThoughts = thoughts.filter(t => t.stageIndex === 0);
+  const canSubmit = (!isAnalyzing) && (
+    analysisMode === "single" 
+      ? (textTarget.trim().length > 0 || !!droppedFile)
+      : multiTargets.some(t => t.trim().length > 0)
+  );
+  
+  // Debug
+  console.log("Debug:", { 
+    analysisMode, 
+    isAnalyzing, 
+    canSubmit, 
+    textTarget: textTarget.trim(), 
+    multiTargets: multiTargets.map(t => t.trim()),
+    hasValidMultiTarget: multiTargets.some(t => t.trim().length > 0)
+  });
 
-  const riskData = result ? (RISK_COLORS[result.risk_score] ?? RISK_COLORS.INFO) : null;
-  const totalDone = Array.from(agentStatuses.values()).filter(s => s.state === "done").length;
-  const hasActivity = feed.length > 0 || isAnalyzing || queuedAgents.length > 0;
-  const isEmpty = !hasActivity && !result;
-
+  // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div className="app-shell">
-
-      {/* ─── Top Bar ──────────────────────────────────────────────────────── */}
-      <header className="topbar">
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-          <div style={{
-            width: 32, height: 32, borderRadius: 9,
-            background: "linear-gradient(135deg, #d97706, #f59e0b)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            boxShadow: "0 2px 8px rgba(217,119,6,0.30)",
-          }}>
-            <ShieldCheck size={17} color="#fff" strokeWidth={2.5} />
-          </div>
-          <div>
-            <div style={{ fontSize: 15, fontWeight: 900, color: "#0f0f0f", letterSpacing: "-0.03em", lineHeight: 1.1 }}>SENTINEL</div>
-            <div style={{ fontSize: 8.5, color: "#a0aec0", fontFamily: "monospace", textTransform: "uppercase", letterSpacing: "0.1em" }}>CTI Fusion Platform</div>
-          </div>
-        </div>
-
-        {/* Pipeline progress */}
-        {hasActivity && (
-          <div style={{ flex: 1, display: "flex", justifyContent: "center", padding: "0 20px" }}>
-            <div className="pipeline-track" style={{ width: "100%", maxWidth: 460 }}>
-              {AGENTS.map((a) => {
-                const s = agentStatuses.get(a.key)?.state ?? "pending";
-                return (
-                  <PipelineStep
-                    key={a.key}
-                    agent={a}
-                    state={s}
-                    isCurrent={s === "thinking"}
-                  />
-                );
-              })}
+    <main className="min-h-screen font-sans" style={{ background: "linear-gradient(155deg,#faf9f7 0%,#f5f1eb 60%,#f7f4ef 100%)", color: "#1c1917" }}>
+      {/* NAV */}
+      <nav className="sticky top-0 z-50 border-b" style={{ background: "rgba(250,249,247,0.9)", backdropFilter: "blur(14px)", borderColor: "#e8e2d9" }}>
+        <div className="max-w-6xl mx-auto px-6 py-3.5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center shadow-sm" style={{ background: "linear-gradient(135deg,#f97316,#dc2626)" }}>
+              <Shield className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <span className="text-sm font-black tracking-widest text-stone-800 uppercase">SENTINEL</span>
+              <span className="ml-2 text-[9px] text-stone-400 tracking-[0.2em] uppercase font-semibold">CTI Platform · PT GSP</span>
+            <div className="ml-4 px-2 py-1 rounded-full text-[10px] font-bold" 
+              style={{ 
+                background: analysisMode === "multi" ? "linear-gradient(135deg,#f97316,#dc2626)" : "#e5e1da",
+                color: analysisMode === "multi" ? "white" : "#78716c"
+              }}>
+              {analysisMode === "multi" ? "MULTI-TC" : "SINGLE"}
+            </div>
             </div>
           </div>
-        )}
-        {!hasActivity && <div style={{ flex: 1 }} />}
-
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-          {hasActivity && (
-            <span style={{ fontSize: 10.5, color: "var(--text-500)", fontFamily: "monospace" }}>
-              {totalDone}/{AGENTS.length} agen
+          <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-full border" style={{ borderColor: "#e8e2d9", background: "rgba(255,255,255,0.6)" }}>
+            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+              wsStatus === "connected" ? "bg-emerald-500 shadow-[0_0_6px_rgba(34,197,94,0.5)]" :
+              wsStatus === "connecting" ? "bg-amber-400 animate-pulse" : "bg-red-400"
+            }`} />
+            <span className="text-[10px] text-stone-500 font-semibold">
+              {wsStatus === "connected" ? "Terhubung" : wsStatus === "connecting" ? "Menghubungkan..." : "Terputus"}
             </span>
-          )}
-          {isAnalyzing ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "3px 9px", borderRadius: 999, background: "#fffbeb", border: "1px solid #fde68a" }}>
-              <div className="live-dot" />
-              <span style={{ fontSize: 10, fontWeight: 800, color: "#d97706", fontFamily: "monospace" }}>LIVE</span>
-            </div>
-          ) : (
-            <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "3px 9px", borderRadius: 999, background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
-              <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#16a34a" }} />
-              <span style={{ fontSize: 10, fontWeight: 800, color: "#16a34a", fontFamily: "monospace" }}>SIAP</span>
-            </div>
-          )}
+          </div>
         </div>
-      </header>
+      </nav>
 
-      {/* ─── Main Layout ──────────────────────────────────────────────────── */}
-      <div className="main-layout">
+      <div className="max-w-6xl mx-auto px-6 py-10">
+        {/* HERO */}
+        <div className="text-center mb-10">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.6, ease: "easeInOut" }}
+            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-orange-700 text-[10px] font-bold uppercase tracking-widest mb-5 border"
+            style={{ background: "#fff7ed", borderColor: "#fed7aa" }}>
+            <Zap className="w-3 h-3" /> Platform Intelijen Ancaman Siber Agentic
+          </motion.div>
+          <motion.h2 initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15, duration: 0.7, ease: "easeInOut" }}
+            className="text-4xl md:text-5xl font-black tracking-tight mb-3" style={{ color: "#1c1917" }}>
+            Analisis Ancaman <span style={{ color: "#ea580c" }}>Multi-Agen AI</span>
+          </motion.h2>
+          <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3, duration: 0.7, ease: "easeInOut" }}
+            className="text-stone-500 max-w-xl mx-auto text-sm leading-relaxed">
+            Masukkan <strong className="text-stone-600">domain, IP, atau SHA hash</strong> — atau <strong className="text-stone-600">drag & drop</strong> file gambar / PDF untuk analisis visual dan hash otomatis.
+          </motion.p>
+        </div>
 
-        {/* ─── Left Sidebar ─────────────────────────────────────────────── */}
-        <aside className="sidebar">
-          <div>
-            <div className="sidebar-section-label"><Radio size={9} /> Jaringan Agen</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-              {AGENTS.map(a => (
-                <AgentPill key={a.key} agent={a} status={agentStatuses.get(a.key) ?? { state: "pending", message: "", thoughts: [] }} />
+        {/* ── INPUT AREA ── */}
+        <motion.form onSubmit={handleAnalyze} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+          transition={{ delay: 0.4, duration: 0.7, ease: "easeInOut" }} className="max-w-2xl mx-auto mb-12">
+
+          {/* Analysis Mode Toggle */}
+          <div className="flex gap-1 p-1 rounded-xl mb-4 w-fit mx-auto border" style={{ background: "#f5f1eb", borderColor: "#e8e2d9" }}>
+            <button 
+              type="button" 
+              onClick={() => { 
+                console.log("Toggle clicked: multi from", analysisMode);
+                setAnalysisMode("multi"); 
+                setUploadError(""); 
+              }}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                analysisMode === "multi"
+                  ? "text-white shadow-md"
+                  : "text-stone-500 hover:text-stone-700"
+              }`}
+              style={{
+                background: analysisMode === "multi" ? "linear-gradient(135deg,#f97316,#dc2626)" : "transparent",
+              }}>
+              <Layers className="w-3.5 h-3.5" />
+              <span>Multi-TC Analysis</span>
+            </button>
+            <button 
+              type="button" 
+              onClick={() => { 
+                console.log("Toggle clicked: single from", analysisMode);
+                setAnalysisMode("single"); 
+                setUploadError(""); 
+              }}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                analysisMode === "single"
+                  ? "text-white shadow-md"
+                  : "text-stone-500 hover:text-stone-700"
+              }`}
+              style={{
+                background: analysisMode === "single" ? "linear-gradient(135deg,#f97316,#dc2626)" : "transparent",
+              }}>
+              <Search className="w-3.5 h-3.5" />
+              <span>Single Analysis</span>
+            </button>
+          </div>
+
+          {/* Tab switcher - only for single mode */}
+          {analysisMode === "single" && (
+            <div className="flex gap-1 p-1 rounded-xl mb-3 w-fit mx-auto border" style={{ background: "#f5f1eb", borderColor: "#e8e2d9" }}>
+              {([
+                { m: "text" as InputMode, icon: Hash,   label: "SHA / Domain / IP" },
+                { m: "file" as InputMode, icon: Upload,  label: "Upload File" },
+              ] as { m: InputMode; icon: React.ElementType; label: string }[]).map(({ m, icon: Icon, label }) => (
+                <button key={m} type="button" onClick={() => { setMode(m); setUploadError(""); }}
+                  className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                    mode === m ? "bg-white shadow text-stone-800 border" : "text-stone-500 hover:text-stone-700"
+                  }`}
+                  style={mode === m ? { borderColor: "#e8e2d9" } : {}}>
+                  <Icon className="w-3.5 h-3.5" />
+                  {label}
+                </button>
               ))}
             </div>
-          </div>
+          )}
 
-          <div className="divider" />
-
-          <div>
-            <div className="sidebar-section-label"><Database size={9} /> Sumber Intelijen</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-              {CTI_SOURCES.map(src => (
-                <div key={src.name} style={{
-                  display: "flex", alignItems: "center", gap: 8,
-                  padding: "7px 8px", borderRadius: 8,
-                  background: "var(--bg-subtle)", border: "1px solid var(--border-light)",
-                }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: src.color }}>{src.name}</div>
-                    <div style={{ fontSize: 9.5, color: "var(--text-300)" }}>{src.desc}</div>
+          {/* Text input */}
+          <AnimatePresence mode="wait">
+            {(mode === "text" || analysisMode === "multi") && (
+              <motion.div key="text" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.4, ease: "easeInOut" }}>
+                {analysisMode === "single" ? (
+                  <div className="flex items-center rounded-2xl overflow-hidden border-2 transition-all duration-300 shadow-sm px-2"
+                    style={{ background: "white", borderColor: "#e8e2d9" }}>
+                    <AnimatePresence>
+                      {!textTarget && (
+                        <motion.div
+                          initial={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: -10 }}
+                          className="pl-2 flex-shrink-0"
+                        >
+                          <Search className="w-5 h-5 text-stone-300 transition-colors" />
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                    
+                    <input type="text" value={textTarget} onChange={e => setTextTarget(e.target.value)}
+                      placeholder="nopaper.life  ·  198.51.100.45  ·  d41d8cd98f00b204..."
+                      className={`flex-1 bg-transparent py-5 px-3 text-sm text-stone-800 placeholder-stone-300 focus:outline-none transition-all duration-300 font-mono ${!textTarget ? "" : "pl-1"}`}
+                      style={{ 
+                        minWidth: "0", 
+                        overflow: "hidden", 
+                        textOverflow: "ellipsis", 
+                        whiteSpace: "nowrap"
+                      }}
+                    />
                   </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="divider" />
-
-          <div>
-            <div className="sidebar-section-label"><Terminal size={9} /> Sesi Analisis</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-              {[
-                { label: "Target", val: target || "—", mono: true },
-                { label: "Dimulai", val: startedAt || "—" },
-                { label: "Log masuk", val: `${feed.length}` },
-                { label: "Agen selesai", val: `${totalDone} / ${AGENTS.length}`, green: true },
-              ].map(r => (
-                <div key={r.label} className="stat-item">
-                  <span className="stat-label">{r.label}</span>
-                  <span className="stat-value truncate" style={{ maxWidth: 120, color: r.green ? "#16a34a" : undefined }}>
-                    {r.val}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <AnimatePresence>
-            {result && (
-              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-                <div className="divider" />
-                <div className="sidebar-section-label" style={{ marginTop: 8 }}><Download size={9} /> Unduh Laporan</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                  {[
-                    { label: "Laporan LIA", sub: "PDF · Intelijen", file: result.report_file, color: "#d97706" },
-                    { label: "SIEM Export", sub: "JSON · ECS", file: result.siem_file, color: "#2563eb" },
-                    { label: "SOAR Playbook", sub: "MD · Respons", file: result.soar_file, color: "#16a34a" },
-                    { label: "Integrity", sub: "JSON · Cross-check", file: result.integrity_file, color: "#7c3aed" },
-                  ].map(item => (
-                    <button key={item.label} onClick={() => downloadFile(item.file)} className="dl-row">
-                      <div style={{ width: 28, height: 28, borderRadius: 7, background: `${item.color}15`, border: `1px solid ${item.color}30`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                        <Download size={12} color={item.color} />
-                      </div>
-                      <div style={{ flex: 1, textAlign: "left" }}>
-                        <div style={{ fontSize: 11.5, fontWeight: 700, color: "#111" }}>{item.label}</div>
-                        <div style={{ fontSize: 9.5, color: "#9ca3af", fontFamily: "monospace" }}>{item.sub}</div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-        </aside>
-
-        {/* ─── Center Panel ─────────────────────────────────────────────── */}
-        <main className="center-panel">
-
-          {/* Panel header */}
-          <div className="panel-header">
-            <Activity size={13} color="#a0aec0" />
-            <span style={{ fontSize: 12.5, fontWeight: 700, color: "#2d3748" }}>Intelligence Timeline</span>
-            {isAnalyzing && (
-              <div style={{ display: "flex", alignItems: "center", gap: 5, marginLeft: 4 }}>
-                <div className="live-dot" style={{ width: 5, height: 5 }} />
-                <span style={{ fontSize: 10.5, color: "#d97706", fontWeight: 600 }}>Analisis berjalan real-time...</span>
-              </div>
-            )}
-            {queuedAgents.length > 0 && (
-              <div style={{ marginLeft: "auto", fontSize: 10.5, color: "var(--text-300)", fontFamily: "monospace" }}>
-                {queuedAgents.length} agen menunggu
-              </div>
-            )}
-            <div style={{ marginLeft: queuedAgents.length > 0 ? 12 : "auto", fontSize: 10.5, color: "var(--text-300)", fontFamily: "monospace" }}>
-              {feed.length} entri
-            </div>
-          </div>
-
-          {/* Scrollable feed */}
-          <div ref={scrollRef} className="feed-scroll">
-
-            {/* ── Empty state ── */}
-            {isEmpty && (
-              <div className="empty-state">
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, maxWidth: 360 }}>
-                  {AGENTS.map(a => (
-                    <div key={a.key} style={{
-                      padding: "10px 12px", borderRadius: 12,
-                      background: "#ffffff", border: `1px solid ${a.accentBorder}`,
-                      display: "flex", alignItems: "center", gap: 10,
-                    }}>
-                      <div style={{
-                        width: 36, height: 36, borderRadius: 9,
-                        background: a.accentBg, border: `1px solid ${a.accentBorder}`,
-                        display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18,
-                      }}>{a.emoji}</div>
-                      <div>
-                        <div style={{ fontSize: 11.5, fontWeight: 700, color: a.accent }}>{a.name}</div>
-                        <div style={{ fontSize: 9.5, color: "var(--text-300)" }}>{a.role}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div style={{ textAlign: "center", maxWidth: 440 }}>
-                  <h1 style={{ fontSize: 24, fontWeight: 900, color: "#0f0f0f", letterSpacing: "-0.03em", marginBottom: 10, lineHeight: 1.2 }}>
-                    Platform Intelijen Ancaman
-                  </h1>
-                  <p style={{ fontSize: 14, color: "#718096", lineHeight: 1.7 }}>
-                    5 agen OSINT: kumpulkan, analisis, validasi konflik, lalu hasilkan laporan LIA otomatis.
-                  </p>
-                </div>
-
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", maxWidth: 420 }}>
-                  {["🔬 Multi-Source CTI", "⚡ Deteksi Konflik", "🛡️ SIEM/SOAR Ready", "📋 Laporan LIA", "🖼️ Computer Vision", "🪤 TC3 Integrity"].map(f => (
-                    <div key={f} style={{
-                      display: "flex", alignItems: "center", gap: 5, padding: "5px 11px", borderRadius: 999,
-                      background: "#ffffff", border: "1px solid var(--border-mid)",
-                      fontSize: 11, fontWeight: 600, color: "var(--text-700)",
-                    }}>{f}</div>
-                  ))}
-                </div>
-
-                <div style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: 10.5, color: "var(--text-300)", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "monospace" }}>
-                    Contoh target analisis
-                  </div>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center" }}>
-                    {[
-                      { val: "8.8.8.8", label: "TC3 → Integrity Trap", color: "#d97706" },
-                      { val: "1.1.1.1", label: "TC2 → Sinyal Ambigu", color: "#7c3aed" },
-                      { val: "0b9bbc...", label: "TC1 → APT Hash", color: "#dc2626", full: "0b9bbcbec8752387ef430c1543a45b788c1bd924977ecef0086b213f6dbce30d" },
-                    ].map(ex => (
-                      <button key={ex.val}
-                        onClick={() => setTarget(ex.full ?? ex.val)}
-                        style={{
-                          padding: "6px 13px", borderRadius: 8, background: "#fff",
-                          border: `1.5px solid ${ex.color}30`, fontSize: 11, cursor: "pointer",
-                          display: "flex", flexDirection: "column", alignItems: "flex-start", transition: "all 0.15s",
-                        }}
-                        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = ex.color; }}
-                        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = `${ex.color}30`; }}
-                      >
-                        <span style={{ fontFamily: "monospace", fontWeight: 700, color: ex.color, fontSize: 10.5 }}>{ex.val}</span>
-                        <span style={{ fontSize: 9.5, color: "var(--text-300)", marginTop: 1 }}>{ex.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* ── Timeline feed ── */}
-            {hasActivity && (
-              <div className="timeline">
-
-                {/* Initializing indicator */}
-                {isAnalyzing && feed.length === 0 && queuedAgents.length === AGENTS.length && (
-                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{
-                    display: "flex", alignItems: "center", gap: 12,
-                    padding: "14px 16px", borderRadius: 12,
-                    background: "#fff", border: "1px solid var(--amber-200)", marginBottom: 8,
-                  }}>
-                    <div style={{ width: 32, height: 32, borderRadius: 8, background: "var(--amber-50)", border: "1px solid var(--amber-200)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>🛡️</div>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: "#d97706", marginBottom: 4 }}>Menginisialisasi SENTINEL Crew...</div>
-                      <LoadingSpinner color="#d97706" />
-                    </div>
-                  </motion.div>
-                )}
-
-                {/* Render actual feed entries */}
-                <AnimatePresence initial={false}>
-                  {feed.map((entry, idx) => {
-                    const agent = AGENTS.find(a => a.key === entry.agentKey)!;
-                    if (!agent) return null;
-                    const showConnector = idx < feed.length - 1 || queuedAgents.length > 0;
-                    return (
-                      <TimelineEntry key={entry.id} entry={entry} agent={agent} showConnector={showConnector} />
-                    );
-                  })}
-                </AnimatePresence>
-
-                {/* Queued agents as skeletons */}
-                <AnimatePresence>
-                  {queuedAgents.map((key, idx) => {
-                    const agent = AGENTS.find(a => a.key === key)!;
-                    return (
-                      <SkeletonQueueCard key={`skel-${key}`} agent={agent} />
-                    );
-                  })}
-                </AnimatePresence>
-
-                {/* Active processing line */}
-                {isAnalyzing && feed.length > 0 && queuedAgents.length === 0 && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", opacity: 0.6, marginTop: 4 }}>
-                    <div style={{ flex: 1, height: 1, background: "var(--border-light)" }} />
-                    <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "2px 8px", borderRadius: 999, background: "var(--amber-50)", border: "1px solid var(--amber-200)" }}>
-                      <div className="live-dot" style={{ width: 5, height: 5 }} />
-                      <span style={{ fontSize: 9, color: "#d97706", fontWeight: 800, fontFamily: "monospace" }}>MEMPROSES</span>
-                    </div>
-                    <div style={{ flex: 1, height: 1, background: "var(--border-light)" }} />
-                  </div>
-                )}
-
-                {/* ── Final Result Card ── */}
-                <AnimatePresence>
-                  {result && !isAnalyzing && (
-                    <motion.div
-                      key="result-card"
-                      initial={{ opacity: 0, y: 20, scale: 0.97 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      transition={{ type: "spring", stiffness: 200, damping: 24, delay: 0.1 }}
-                      className="result-card"
-                      style={{ borderColor: riskData?.border }}
-                    >
-                      <div className="result-card-header" style={{ background: riskData?.bg, borderBottomColor: riskData?.border }}>
-                        <div style={{ width: 42, height: 42, borderRadius: 11, background: "#fff", border: `1.5px solid ${riskData?.border}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                          <ShieldCheck size={20} color={riskData?.text} />
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 15, fontWeight: 900, color: "#0f0f0f", letterSpacing: "-0.01em" }}>Analisis Selesai</div>
-                          <div style={{ fontSize: 10.5, color: "var(--text-500)", fontFamily: "monospace", marginTop: 2 }}>{target}</div>
-                        </div>
-                        <div style={{
-                          padding: "5px 14px", borderRadius: 999, background: "#fff",
-                          border: `1.5px solid ${riskData?.border}`,
-                          fontSize: 10, fontWeight: 900, letterSpacing: "0.09em",
-                          color: riskData?.text, textTransform: "uppercase",
-                        }}>
-                          RISK: {riskData?.label ?? result.risk_score}
-                        </div>
-                      </div>
-
-                      {result.integrity_conflict && (
-                        <div style={{ padding: "10px 20px", background: "#fffbeb", borderBottom: "1px solid #fde68a" }}>
-                          <div className="conflict-banner">
-                            <AlertTriangle size={15} color="#d97706" style={{ flexShrink: 0, marginTop: 1 }} />
-                            <div>
-                              <div style={{ fontSize: 11.5, fontWeight: 800, color: "#d97706", marginBottom: 2 }}>⚠ Konflik Integritas Terdeteksi (TC3)</div>
-                              <div style={{ fontSize: 11, color: "#92400e" }}>Sumber data berbeda penilaiannya. Verifikasi manual wajib sebelum eskalasi.</div>
-                            </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="text-xs font-bold text-stone-500 uppercase tracking-widest mb-2">Multi-TC Analysis (3 Threat Cases)</div>
+                    {multiTargets.map((target, index) => (
+                      <div key={index} className="flex items-center rounded-2xl overflow-hidden border-2 transition-all duration-300 shadow-sm px-2"
+                        style={{ background: "white", borderColor: "#e8e2d9" }}>
+                        <div className="pl-2 flex-shrink-0">
+                          <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" 
+                            style={{ background: "#f97316", color: "white" }}>
+                            {index + 1}
                           </div>
                         </div>
-                      )}
-
-                      <div className="result-card-downloads">
-                        {[
-                          { label: "Laporan LIA", sub: "PDF · Format Intelijen", file: result.report_file, color: "#d97706", Icon: FileText },
-                          { label: "SIEM Export", sub: "JSON · ECS Schema", file: result.siem_file, color: "#2563eb", Icon: Cpu },
-                          { label: "SOAR Playbook", sub: "MD · Response Plan", file: result.soar_file, color: "#16a34a", Icon: Activity },
-                          { label: "Integrity", sub: "JSON · Cross-Feed", file: result.integrity_file, color: "#7c3aed", Icon: ShieldCheck },
-                        ].map(item => (
-                          <button key={item.label} onClick={() => downloadFile(item.file)} className="dl-row">
-                            <div style={{ width: 32, height: 32, borderRadius: 8, background: `${item.color}12`, border: `1px solid ${item.color}25`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                              <item.Icon size={14} color={item.color} />
-                            </div>
-                            <div style={{ flex: 1, textAlign: "left" }}>
-                              <div style={{ fontSize: 12, fontWeight: 700, color: "#111" }}>{item.label}</div>
-                              <div style={{ fontSize: 9.5, color: "#9ca3af", fontFamily: "monospace", marginTop: 1 }}>{item.sub}</div>
-                            </div>
-                            <Download size={12} color="#9ca3af" />
-                          </button>
-                        ))}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            )}
-          </div>
-
-          {/* ─── Input zone ───────────────────────────────────────────────── */}
-          <div className="input-zone">
-            {/* Mode toggle */}
-            <div style={{ display: "flex", justifyContent: "center", marginBottom: 10, gap: 6 }}>
-              <button
-                onClick={() => setMultiMode(false)}
-                style={{
-                  padding: "4px 14px", borderRadius: 999, fontSize: 11, fontWeight: 700,
-                  border: `1.5px solid ${!multiMode ? "#d97706" : "var(--border-mid)"}`,
-                  background: !multiMode ? "#fffbeb" : "transparent",
-                  color: !multiMode ? "#d97706" : "var(--text-300)",
-                  cursor: "pointer", transition: "all 0.15s",
-                }}
-              >🎯 Single Target</button>
-              <button
-                onClick={() => setMultiMode(true)}
-                style={{
-                  padding: "4px 14px", borderRadius: 999, fontSize: 11, fontWeight: 700,
-                  border: `1.5px solid ${multiMode ? "#d97706" : "var(--border-mid)"}`,
-                  background: multiMode ? "#fffbeb" : "transparent",
-                  color: multiMode ? "#d97706" : "var(--text-300)",
-                  cursor: "pointer", transition: "all 0.15s",
-                }}
-              >⚡ Multi-TC (TC1+TC2+TC3)</button>
-            </div>
-
-            <AnimatePresence mode="wait">
-              {!multiMode ? (
-                <motion.div key="single" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                  <div className="search-bar">
-                    <Search size={16} color="#a0aec0" style={{ flexShrink: 0 }} />
-                    <input
-                      type="text"
-                      placeholder="Masukkan IP, domain, atau SHA256/MD5/SHA1 hash..."
-                      value={target}
-                      onChange={e => setTarget(e.target.value)}
-                      onKeyDown={e => e.key === "Enter" && handleAnalyze()}
-                      disabled={isAnalyzing}
-                    />
-                    <label style={{
-                      cursor: "pointer", padding: "5px 8px", borderRadius: 7,
-                      background: selectedImage ? "var(--amber-50)" : "transparent",
-                      color: selectedImage ? "#d97706" : "#a0aec0",
-                      border: selectedImage ? "1px solid var(--amber-200)" : "1px solid transparent",
-                      display: "flex", alignItems: "center", gap: 4,
-                      fontSize: 10.5, fontWeight: 600, flexShrink: 0, transition: "all 0.15s",
-                    }}>
-                      <input type="file" style={{ display: "none" }} accept="image/*,.pdf"
-                        onChange={e => setSelectedImage(e.target.files?.[0] || null)} />
-                      {selectedImage ? `📎 ${selectedImage.name.slice(0, 10)}…` : "📎 Lampir"}
-                    </label>
-                    <button className="btn-primary" onClick={handleAnalyze} disabled={isAnalyzing || !target}>
-                      {isAnalyzing
-                        ? <><Clock size={13} className="spin" /><span>Menganalisis...</span></>
-                        : <><Zap size={13} /><span>Analisis</span></>
-                      }
-                    </button>
-                  </div>
-                </motion.div>
-              ) : (
-                <motion.div key="multi" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                  {multiProgress.total > 0 && (
-                    <div style={{
-                      marginBottom: 10, padding: "8px 14px", borderRadius: 10,
-                      background: "#fffbeb", border: "1px solid #fde68a",
-                      display: "flex", alignItems: "center", gap: 10, fontSize: 11,
-                    }}>
-                      {multiProgress.current ? <LoadingSpinner size={12} color="#d97706" /> : <CheckCircle2 size={12} color="#16a34a" />}
-                      <span style={{ fontWeight: 700, color: multiProgress.current ? "#d97706" : "#16a34a" }}>
-                        {multiProgress.current
-                          ? `Sistem bekerja di belakang... menganalisis: ${multiProgress.current.slice(0, 30)}`
-                          : `Semua selesai! ${multiProgress.done.length}/${multiProgress.total} target diproses.`
-                        }
-                      </span>
-                      <span style={{ marginLeft: "auto", color: "#92400e", fontFamily: "monospace", fontWeight: 700 }}>
-                        {multiProgress.done.length}/{multiProgress.total}
-                      </span>
-                    </div>
-                  )}
-                  {/* Quick-fill for GSP demo targets */}
-                  <div style={{ display: "flex", justifyContent: "center", marginBottom: 8, gap: 6 }}>
-                    <span style={{ fontSize: 10, color: "var(--text-300)", alignSelf: "center", fontFamily: "monospace" }}>Quick-fill:</span>
-                    <button
-                      onClick={() => { setTc1("0b9bbcbec8752387ef430c1543a45b788c1bd924977ecef0086b213f6dbce30d"); setTc2("docinstall.top"); setTc3("8.8.8.8"); }}
-                      style={{ padding: "3px 10px", borderRadius: 999, fontSize: 10, fontWeight: 700, border: "1.5px solid #d97706", background: "#fffbeb", color: "#d97706", cursor: "pointer" }}
-                    >⚡ TC1+TC2+TC3 Demo</button>
-                  </div>
-                  <div className="multi-target-grid" style={{ marginBottom: 8 }}>
-                    {[
-                      { label: "TC1 — APT Hash", val: tc1, set: setTc1, placeholder: "SHA256/MD5/SHA1...", color: "#dc2626" },
-                      { label: "TC2 — IP / Domain", val: tc2, set: setTc2, placeholder: "IP atau domain...", color: "#7c3aed" },
-                      { label: "TC3 — Integrity Trap", val: tc3, set: setTc3, placeholder: "IP atau domain...", color: "#d97706" },
-                    ].map(f => (
-                      <div key={f.label} className="target-input-card" style={{ borderColor: f.val ? `${f.color}60` : undefined }}>
-                        <div className="target-input-label" style={{ color: f.color }}>{f.label}</div>
-                        <input
-                          className="target-input-field"
-                          type="text"
-                          value={f.val}
-                          onChange={e => f.set(e.target.value)}
-                          placeholder={f.placeholder}
-                          disabled={isAnalyzing}
+                        <input 
+                          type="text" 
+                          value={target} 
+                          onChange={e => {
+                            const newTargets = [...multiTargets];
+                            newTargets[index] = e.target.value;
+                            setMultiTargets(newTargets);
+                          }}
+                          placeholder={`TC${index + 1}: ${index === 0 ? "SHA hash (64 chars)" : index === 1 ? "IP/Domain" : "IP/Domain (TC3)"}`}
+                          className="flex-1 bg-transparent py-4 px-3 text-sm text-stone-800 placeholder-stone-300 focus:outline-none transition-all duration-300 font-mono"
+                          style={{ 
+                            minWidth: "0", 
+                            overflow: "hidden", 
+                            textOverflow: "ellipsis", 
+                            whiteSpace: "nowrap"
+                          }}
                         />
                       </div>
                     ))}
                   </div>
-                  <div style={{ display: "flex", gap: 8, maxWidth: 680, margin: "0 auto" }}>
-                    <button
-                      className="btn-primary"
-                      onClick={handleAnalyzeMulti}
-                      disabled={isAnalyzing || (!tc1.trim() && !tc2.trim() && !tc3.trim())}
-                      style={{ flex: 1 }}
-                    >
-                      {isAnalyzing
-                        ? <><LoadingSpinner size={13} color="#fff" /><span>Sistem berjalan di belakang...</span></>
-                        : <><Zap size={13} /><span>Jalankan TC1 + TC2 + TC3 Otomatis</span></>
-                      }
-                    </button>
-                    {consolidatedFile && (
-                      <button
-                        onClick={() => window.open(`http://localhost:8000/exports/${consolidatedFile}`, "_blank")}
-                        style={{
-                          padding: "8px 14px", borderRadius: 9, background: "#f0fdf4",
-                          border: "1.5px solid #86efac", color: "#16a34a",
-                          fontWeight: 700, fontSize: 12, cursor: "pointer",
-                          display: "flex", alignItems: "center", gap: 5,
-                        }}
-                      >
-                        <Download size={13} /> PDF Konsolidasi
-                      </button>
-                    )}
+                )}
+
+                <motion.button 
+                  type="submit" 
+                  disabled={!canSubmit}
+                  animate={{ 
+                    opacity: canSubmit ? 1 : 0.8,
+                    scale: canSubmit ? 1 : 0.98
+                  }}
+                  className="m-2 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest text-white transition-all outline-none"
+                  style={{
+                    background: canSubmit ? "linear-gradient(135deg,#f97316,#dc2626)" : "#e5e1da",
+                    boxShadow: canSubmit ? "0 4px 14px rgba(249,115,22,0.25)" : "none",
+                  }}>
+                  {isAnalyzing ? (
+                    <span className="flex items-center gap-2"><Loader2 className="w-3 h-3 animate-spin" /> Memindai...</span>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <AnimatePresence>
+                        {!canSubmit && (
+                          <motion.div initial={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center">
+                             <Search className="w-3.5 h-3.5" />
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                      <span>{isAnalyzing ? "Memindai..." : (analysisMode === "single" ? (textTarget.trim() ? "ANALISIS SEKARANG" : "ANALISIS") : "ANALISIS MULTI-TC")}</span>
+                    </div>
+                  )}
+                </motion.button>
+              </motion.div>
+            )}
+
+            {/* File drop zone - only for single mode */}
+            {mode === "file" && analysisMode === "single" && (
+              <motion.div key="file" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.4, ease: "easeInOut" }}>
+                <input ref={fileInputRef} type="file" accept={ACCEPTED_EXT.join(",")}
+                  className="hidden" onChange={handleFileInputChange} />
+
+                {/* Dropped file pill */}
+                {droppedFile ? (
+                  <div className="rounded-2xl border-2 overflow-hidden" style={{ background: "white", borderColor: "#e8e2d9" }}>
+                    <div className="flex items-center gap-4 p-4">
+                      {/* Preview / icon */}
+                      <div className="w-14 h-14 rounded-xl overflow-hidden flex items-center justify-center flex-shrink-0 border" style={{ borderColor: "#f0ede7", background: "#faf9f7" }}>
+                        {droppedFile.preview
+                          ? <img src={droppedFile.preview} alt="preview" className="w-full h-full object-cover" />
+                          : <FileIcon className="w-6 h-6 text-stone-400" />
+                        }
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-stone-800 truncate">{droppedFile.file.name}</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            droppedFile.kind === "pdf"
+                              ? "bg-red-100 text-red-600"
+                              : "bg-violet-100 text-violet-600"
+                          }`}>
+                            {droppedFile.kind === "pdf" ? "📄 PDF → SHA256" : "🖼 Gambar → Visual AI"}
+                          </span>
+                          <span className="text-[10px] text-stone-400">{formatBytes(droppedFile.file.size)}</span>
+                        </div>
+                        {droppedFile.kind === "pdf" && (
+                          <p className="text-[10px] text-stone-400 mt-1">Hash SHA256 akan dihitung otomatis</p>
+                        )}
+                        {droppedFile.kind === "image" && (
+                          <p className="text-[10px] text-stone-400 mt-1">Gambar akan dianalisis oleh vision agent</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button type="button" onClick={clearFile}
+                          className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-stone-100 transition-colors">
+                          <X className="w-4 h-4 text-stone-400" />
+                        </button>
+                        <button type="submit" disabled={!canSubmit}
+                          className="px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest text-white transition-all"
+                          style={{
+                            background: canSubmit ? "linear-gradient(135deg,#f97316,#dc2626)" : "#d6d3d1",
+                            boxShadow: canSubmit ? "0 4px 14px rgba(249,115,22,0.3)" : "none",
+                          }}>
+                          {isAnalyzing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Analisis"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  /* Drop zone */
+                  <div
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                    className={`relative border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all duration-200 ${
+                      isDraggingOver ? "scale-[1.01]" : ""
+                    }`}
+                    style={{
+                      borderColor: isDraggingOver ? "#f97316" : "#d6d0c8",
+                      background: isDraggingOver ? "#fff7ed" : "white",
+                    }}
+                  >
+                    <div className={`w-14 h-14 mx-auto rounded-2xl flex items-center justify-center mb-4 transition-all ${isDraggingOver ? "scale-110" : ""}`}
+                      style={{ background: isDraggingOver ? "#fff7ed" : "#faf9f7", border: "2px dashed", borderColor: isDraggingOver ? "#f97316" : "#e8e2d9" }}>
+                      <Upload className={`w-6 h-6 transition-colors ${isDraggingOver ? "text-orange-500" : "text-stone-400"}`} />
+                    </div>
+                    <p className="text-sm font-bold text-stone-700 mb-1">
+                      {isDraggingOver ? "Lepaskan file di sini" : "Drag & drop file di sini"}
+                    </p>
+                    <p className="text-xs text-stone-400 mb-4">atau klik untuk browse</p>
+                    {/* Supported formats */}
+                    <div className="flex flex-wrap gap-2 justify-center">
+                      {[
+                        { label: "PNG / JPG / WEBP", icon: ImageIcon, color: "text-violet-600", bg: "bg-violet-50", border: "border-violet-200" },
+                        { label: "PDF",              icon: FileText,  color: "text-red-600",    bg: "bg-red-50",    border: "border-red-200"    },
+                      ].map(({ label, icon: Icon, color, bg, border }) => (
+                        <span key={label} className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-[10px] font-bold ${color} ${bg} ${border}`}>
+                          <Icon className="w-3 h-3" /> {label}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Optional extra text target input for images */}
+                {droppedFile?.kind === "image" && (
+                  <div className="mt-3 flex items-center rounded-xl border overflow-hidden" style={{ background: "white", borderColor: "#e8e2d9" }}>
+                    <Globe className="w-4 h-4 text-stone-400 ml-3 flex-shrink-0" />
+                    <input type="text" value={textTarget} onChange={e => setTextTarget(e.target.value)}
+                      placeholder="Opsional: tambahkan domain/IP terkait untuk dianalisis bersama..."
+                      className="flex-1 bg-transparent py-3 pl-2 pr-3 text-xs text-stone-700 placeholder-stone-400 focus:outline-none"
+                    />
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Error */}
+          {uploadError && (
+            <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+              className="mt-3 text-center text-xs text-red-500 font-medium">⚠ {uploadError}</motion.p>
+          )}
+
+          {/* Quick detection pills */}
+          {mode === "text" && !textTarget && !isAnalyzing && (
+            <div className="flex flex-wrap gap-2 mt-4 justify-center">
+              {["nopaper.life","198.51.100.45","d41d8cd98f00b204e9800998ecf8427e"].map(ex => (
+                <button key={ex} type="button" onClick={() => setTextTarget(ex)}
+                  className="px-3 py-1 rounded-full border text-[10px] font-mono text-stone-500 hover:text-stone-800 hover:border-stone-400 transition-all"
+                  style={{ borderColor: "#e8e2d9", background: "white" }}>
+                  {ex}
+                </button>
+              ))}
+            </div>
+          )}
+        </motion.form>
+
+        {/* MAIN GRID */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+
+          {/* LEFT */}
+          <div className="lg:col-span-4 space-y-5">
+            {/* Stage Tracker */}
+            <div className="rounded-2xl border p-5" style={{ background: "white", borderColor: "#e8e2d9" }}>
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-stone-400 mb-4 pb-3 border-b" style={{ borderColor: "#f0ede7" }}>
+                Tahapan Operasional
+              </p>
+              <div className="space-y-1">
+                {MISSION_STAGES.map((stage) => {
+                  const Icon = stage.icon;
+                  const isActive = currentStage === stage.id;
+                  const isPast   = currentStage > stage.id;
+                  const cnt      = thoughts.filter(t => t.stageIndex === stage.id).length;
+                  return (
+                    <div key={stage.id}
+                      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-300 ${
+                        isActive ? `${stage.bg} ${stage.border} border` : "border border-transparent"
+                      }`}>
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 transition-all ${
+                        isActive ? `${stage.bg} border ${stage.border}` :
+                        isPast   ? "bg-emerald-50 border border-emerald-200" :
+                        "bg-stone-100 border border-stone-200"
+                      }`}>
+                        {isPast
+                          ? <Check className="w-3.5 h-3.5 text-emerald-600" />
+                          : <Icon className={`w-3.5 h-3.5 ${isActive ? stage.color : "text-stone-400"}`} />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between">
+                          <p className={`text-xs font-bold truncate ${isActive ? "text-stone-800" : isPast ? "text-stone-500" : "text-stone-400"}`}>{stage.label}</p>
+                          {cnt > 0 && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-500 ml-2 flex-shrink-0">{cnt}</span>}
+                        </div>
+                        {isActive && (
+                          <div className="flex gap-1 mt-1">
+                            {[0, 0.12, 0.24].map((d, i) => (
+                              <div key={i} className="w-1 h-1 rounded-full animate-bounce" style={{ background: "#ea580c", animationDelay: `${d}s` }} />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Live Agent Feed */}
+            <AnimatePresence>
+              {(isAnalyzing || thoughts.length > 0) && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.5, ease: "easeInOut" }}
+                  className="rounded-2xl border overflow-hidden" style={{ background: "white", borderColor: "#e8e2d9" }}>
+                  <div className="px-4 py-3 flex items-center gap-2 border-b" style={{ borderColor: "#f0ede7", background: "#faf9f7" }}>
+                    <Activity className="w-3.5 h-3.5 text-orange-500" />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-stone-500">Umpan Agen Langsung</span>
+                    <span className="ml-auto text-[9px] text-stone-400 font-mono">{thoughts.length}</span>
+                    {isAnalyzing && <span className="w-2 h-2 rounded-full bg-orange-400 animate-pulse ml-1" />}
+                  </div>
+                  <div className="p-3 space-y-2.5 max-h-80 overflow-y-auto overflow-x-hidden break-words">
+                    {thoughts.slice(-20).map(t => {
+                      const si = t.stageIndex;
+                      const ac = si > 0 ? AGENT_COLORS[(si - 1) % AGENT_COLORS.length] : null;
+                      return (
+                        <motion.div key={t.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.4, ease: "easeInOut" }}
+                          className="flex items-start gap-2">
+                          <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 text-[9px] font-black ${ac ? `${ac.bg} ${ac.text}` : "bg-stone-100 text-stone-500"}`}>
+                            {si === 0 ? <Bot className="w-3 h-3" /> : t.role.charAt(0)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 mb-0.5">
+                              <span className={`text-[9px] font-black uppercase tracking-widest ${ac ? ac.text : "text-stone-400"}`}>{t.role}</span>
+                              <span className="text-[9px] text-stone-300 font-mono">{t.timestamp}</span>
+                              {!t.isComplete && (
+                                <span className="flex gap-0.5 ml-1">
+                                  {[0, 0.15].map((d, i) => <span key={i} className="w-1 h-1 rounded-full bg-orange-400 animate-bounce inline-block" style={{ animationDelay: `${d}s` }} />)}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-stone-600 leading-relaxed break-words">
+                              <MarkdownText text={t.content} className="break-all" />
+                            </div>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                    <div ref={liveEndRef} />
                   </div>
                 </motion.div>
               )}
             </AnimatePresence>
-
-            <p style={{ textAlign: "center", marginTop: 8, fontSize: 9.5, color: "#d1d5db", fontFamily: "monospace", letterSpacing: "0.08em", textTransform: "uppercase" }}>
-              SENTINEL v5 — 5-Agent CTI Fusion · Multi-TC · Real-time · MITRE ATT&CK
-            </p>
           </div>
-        </main>
+
+          {/* RIGHT */}
+          <div className="lg:col-span-8">
+            {/* Empty */}
+            {!result && !isAnalyzing && (
+              <div className="h-full min-h-[400px] flex flex-col items-center justify-center text-center gap-5">
+                <div className="w-24 h-24 rounded-3xl border-2 border-dashed flex items-center justify-center" style={{ borderColor: "#e8e2d9" }}>
+                  <Shield className="w-9 h-9 text-stone-300" />
+                </div>
+                <div>
+                  <p className="text-stone-500 font-medium mb-1">Belum ada analisis dimulai</p>
+                  <p className="text-stone-400 text-sm max-w-xs">Masukkan target atau drag & drop file dan tekan <span className="text-orange-500 font-semibold">Analisis</span>.</p>
+                </div>
+                {/* Format cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4 w-full max-w-lg">
+                  {[
+                    { label: "Domain / IP / Hash", icon: Hash,      desc: "Teks langsung",            color: "text-sky-600",    bg: "bg-sky-50",    border: "border-sky-200" },
+                    { label: "Gambar",             icon: ImageIcon,  desc: "PNG, JPG, WEBP, BMP, GIF", color: "text-violet-600", bg: "bg-violet-50", border: "border-violet-200" },
+                    { label: "PDF",                icon: FileText,   desc: "SHA256 otomatis",           color: "text-rose-600",   bg: "bg-rose-50",   border: "border-rose-200" },
+                  ].map(({ label, icon: Icon, desc, color, bg, border }) => (
+                    <div key={label} className={`p-4 rounded-xl border text-center ${bg} ${border}`}>
+                      <Icon className={`w-5 h-5 ${color} mx-auto mb-2`} />
+                      <p className={`text-xs font-bold ${color}`}>{label}</p>
+                      <p className="text-[10px] text-stone-400 mt-0.5">{desc}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Scanning */}
+            {isAnalyzing && !result && (
+              <div className="h-full min-h-[400px] flex flex-col items-center justify-center text-center gap-6">
+                <div className="relative">
+                  <div className="absolute inset-0 rounded-full border-2 border-orange-200 animate-ping" />
+                  <div className="absolute inset-3 rounded-full border border-orange-300 animate-ping" style={{ animationDelay: "0.3s" }} />
+                  <div className="w-20 h-20 rounded-full border-2 flex items-center justify-center" style={{ background: "#fff7ed", borderColor: "#fed7aa" }}>
+                    <Shield className="w-8 h-8 text-orange-500" />
+                  </div>
+                </div>
+                <div>
+                  <p className="text-stone-800 font-bold text-lg mb-1">Agen Bekerja...</p>
+                  <p className="text-stone-500 text-sm">
+                    {analysisMode === "multi" ? (
+                      <>
+                        Target: <span className="text-orange-600 font-semibold">{validTargetsState[currentTargetIndex] || ""}</span>
+                        <span className="text-stone-400 ml-2">({currentTargetIndex + 1}/{totalTargets})</span>
+                      </>
+                    ) : (
+                      <>Target: <span className="text-orange-600 font-semibold">{textTarget || droppedFile?.file.name}</span></>
+                    )}
+                  </p>
+                  {currentStage > 0 && agentProgress[currentStage] && (
+                    <p className="text-stone-400 text-xs mt-1">
+                      {agentProgress[currentStage].details} ({Math.round(agentProgress[currentStage].progress)}%)
+                    </p>
+                  )}
+                </div>
+                <div className="flex gap-2 justify-center flex-wrap">
+                  {MISSION_STAGES.map(s => {
+                    const Icon = s.icon;
+                    const active = currentStage === s.id;
+                    const done   = currentStage > s.id;
+                    return (
+                      <div key={s.id} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[10px] font-bold transition-all duration-300 ${
+                        active ? `${s.bg} ${s.border} ${s.color} shadow-sm` :
+                        done   ? "bg-emerald-50 border-emerald-200 text-emerald-600" :
+                        "bg-stone-50 border-stone-200 text-stone-400"
+                      }`}>
+                        {done ? <Check className="w-3 h-3" /> : <Icon className="w-3 h-3" />}
+                        {s.label}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Result */}
+            <AnimatePresence>
+              {result && riskCfg && (
+                <motion.div ref={resultRef} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                  transition={{ duration: 0.7, ease: "easeInOut" }} className="space-y-5">
+
+                  {/* Target header */}
+                  <div className="rounded-2xl border-2 p-6" style={{ background: "white", borderColor: "#e8e2d9" }}>
+                    <div className="flex items-start justify-between flex-wrap gap-4">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-[0.25em] text-stone-400 mb-1">Target Dianalisis</p>
+                        <h3 className="text-xl font-black text-stone-800 break-all">{result.target}</h3>
+                        <p className="text-xs text-stone-400 mt-1">{new Date().toLocaleString("id-ID")}</p>
+                      </div>
+                      <span className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-black ${riskCfg.badge}`}>
+                        {riskCfg.icon} {riskCfg.label}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Integrity */}
+                  <div className={`flex items-start gap-3 px-5 py-4 rounded-xl border text-sm ${
+                    result.integrity_conflict
+                      ? "bg-amber-50 border-amber-200 text-amber-800"
+                      : "bg-emerald-50 border-emerald-200 text-emerald-800"
+                  }`}>
+                    {result.integrity_conflict ? <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-600" /> : <CheckCircle2 className="w-4 h-4 flex-shrink-0 mt-0.5 text-emerald-600" />}
+                    <span className="font-medium leading-relaxed">
+                      {result.integrity_conflict
+                        ? "Konflik Integritas Terdeteksi — Ketidakselarasan antara feed publik dan basis data internal. Verifikasi manual diperlukan."
+                        : "Integritas Terkonfirmasi — Semua saluran intelijen selaras."}
+                    </span>
+                  </div>
+
+                  {/* Summary */}
+                  <div className="rounded-2xl border-2 overflow-hidden" style={{ background: "white", borderColor: "#e8e2d9" }}>
+                    <div className="px-5 py-3.5 border-b flex items-center gap-2" style={{ borderColor: "#f0ede7", background: "#faf9f7" }}>
+                      <Info className="w-4 h-4 text-orange-500" />
+                      <span className="text-xs font-black uppercase tracking-widest text-stone-600">Ringkasan Eksekutif</span>
+                    </div>
+                    <div className="p-6">
+                      <p className="text-sm text-stone-700 leading-relaxed whitespace-pre-line">
+                        {summary || sanitize(result.result)}
+                      </p>
+                    </div>
+                    <div className="px-6 py-3 border-t flex items-center gap-2" style={{ borderColor: "#f0ede7", background: "#faf9f7" }}>
+                      <Info className="w-3 h-3 text-stone-400" />
+                      <p className="text-[11px] text-stone-400">Hanya ringkasan di sini. Unduh laporan lengkap untuk IoC, playbook SOAR, dan analisis teknis.</p>
+                    </div>
+                  </div>
+
+                  {/* Download */}
+                  <div className="rounded-2xl border-2 overflow-hidden" style={{ background: "white", borderColor: "#e8e2d9" }}>
+                    <div className="px-5 py-3.5 border-b flex items-center gap-2" style={{ borderColor: "#f0ede7", background: "#faf9f7" }}>
+                      <Download className="w-4 h-4 text-orange-500" />
+                      <span className="text-xs font-black uppercase tracking-widest text-stone-600">Unduh Laporan Lengkap</span>
+                    </div>
+                    <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {result.report_file && (
+                        <a href={`http://localhost:8000/exports/${result.report_file}`} download
+                          className="group flex items-center gap-4 p-4 rounded-xl border-2 transition-all hover:shadow-md"
+                          style={{ borderColor: "#e8e2d9", background: "#faf9f7" }}>
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "#fff7ed" }}>
+                            <FileText className="w-5 h-5 text-orange-500" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-stone-800">Laporan PDF (LIA)</p>
+                            <p className="text-[11px] text-stone-500">Bahasa Indonesia · Formal · Rahasia</p>
+                          </div>
+                          <Download className="w-4 h-4 text-stone-400 group-hover:text-orange-500 transition-colors" />
+                        </a>
+                      )}
+                      {result.siem_file && (
+                        <a href={`http://localhost:8000/exports/${result.siem_file}`} download
+                          className="group flex items-center gap-4 p-4 rounded-xl border-2 transition-all hover:shadow-md"
+                          style={{ borderColor: "#e8e2d9", background: "#faf9f7" }}>
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "#eff6ff" }}>
+                            <FileJson className="w-5 h-5 text-blue-500" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-stone-800">Data SIEM (JSON)</p>
+                            <p className="text-[11px] text-stone-500">ECS Format · Elastic SIEM Ready</p>
+                          </div>
+                          <Download className="w-4 h-4 text-stone-400 group-hover:text-blue-500 transition-colors" />
+                        </a>
+                      )}
+                      {result.soar_file && (
+                        <a href={`http://localhost:8000/exports/${result.soar_file}`} download
+                          className="group flex items-center gap-4 p-4 rounded-xl border-2 transition-all hover:shadow-md"
+                          style={{ borderColor: "#e8e2d9", background: "#faf9f7" }}>
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "#f0fdf4" }}>
+                            <FileBarChart className="w-5 h-5 text-green-500" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-stone-800">SOAR Playbook (MD)</p>
+                            <p className="text-[11px] text-stone-500">Response Steps · MITRE ATT&CK</p>
+                          </div>
+                          <Download className="w-4 h-4 text-stone-400 group-hover:text-green-500 transition-colors" />
+                        </a>
+                      )}
+                      {result.integrity_file && (
+                        <a href={`http://localhost:8000/exports/${result.integrity_file}`} download
+                          className="group flex items-center gap-4 p-4 rounded-xl border-2 transition-all hover:shadow-md"
+                          style={{ borderColor: "#e8e2d9", background: "#faf9f7" }}>
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "#fef3c7" }}>
+                            <AlertTriangle className="w-5 h-5 text-amber-500" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-stone-800">Integrity Report (JSON)</p>
+                            <p className="text-[11px] text-stone-500">Cross-feed Validation · Conflicts</p>
+                          </div>
+                          <Download className="w-4 h-4 text-stone-400 group-hover:text-amber-500 transition-colors" />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Thinking Log */}
+                  {thoughts.length > 0 && (
+                    <div className="rounded-2xl border-2 overflow-hidden" style={{ background: "white", borderColor: "#e8e2d9" }}>
+                      <button onClick={() => setLogsExpanded(!logsExpanded)}
+                        className="w-full flex items-center justify-between px-5 py-4 hover:bg-stone-50 transition-colors">
+                        <div className="flex items-center gap-2.5">
+                          {logsExpanded ? <EyeOff className="w-4 h-4 text-stone-400" /> : <Eye className="w-4 h-4 text-stone-400" />}
+                          <span className="text-xs font-black uppercase tracking-widest text-stone-500">Log Pemikiran Lengkap Agen</span>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-stone-100 text-stone-500">
+                            {thoughts.length} langkah · {MISSION_STAGES.filter(s => thoughts.some(t => t.stageIndex === s.id)).length} agen
+                          </span>
+                        </div>
+                        <ChevronDown className={`w-4 h-4 text-stone-400 transition-transform duration-300 ${logsExpanded ? "rotate-180" : ""}`} />
+                      </button>
+
+                      <AnimatePresence initial={false}>
+                        {logsExpanded && (
+                          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.3, ease: "easeInOut" }} className="overflow-hidden">
+                            <div className="border-t" style={{ borderColor: "#f0ede7" }}>
+                              {/* System group */}
+                              {systemThoughts.length > 0 && (
+                                <div className="border-b" style={{ borderColor: "#f0ede7" }}>
+                                  <div className="px-5 py-2.5 flex items-center gap-2 bg-stone-50">
+                                    <Bot className="w-3.5 h-3.5 text-stone-400" />
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-stone-400">Sistem</span>
+                                    <span className="ml-auto text-[9px] text-stone-400">{systemThoughts.length}</span>
+                                  </div>
+                                  <div className="px-5 py-3 space-y-3">
+                                    {systemThoughts.map(t => (
+                                      <div key={t.id} className="flex items-start gap-2.5">
+                                        <div className="w-5 h-5 rounded-full bg-stone-100 text-stone-500 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                          <Bot className="w-2.5 h-2.5" />
+                                        </div>
+                                        <div>
+                                          <span className="text-[9px] text-stone-300 font-mono mr-2">{t.timestamp}</span>
+                                          <div className="text-xs text-stone-600 leading-relaxed break-words"><MarkdownText text={t.content} className="break-all" /></div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {/* Agent groups */}
+                              {MISSION_STAGES.map((stage, si) => {
+                                const Icon = stage.icon;
+                                const sts = thoughts.filter(t => t.stageIndex === stage.id);
+                                if (sts.length === 0) return null;
+                                const ac = AGENT_COLORS[si % AGENT_COLORS.length];
+                                return (
+                                  <div key={stage.id} className="border-b last:border-b-0" style={{ borderColor: "#f0ede7" }}>
+                                    <div className={`px-5 py-2.5 flex items-center gap-2 ${stage.bg}`}>
+                                      <Icon className={`w-3.5 h-3.5 ${stage.color}`} />
+                                      <span className={`text-[10px] font-black uppercase tracking-widest ${stage.color}`}>{stage.label}</span>
+                                      <span className="ml-auto text-[9px] text-stone-400">{sts.length}</span>
+                                    </div>
+                                    <div className="px-5 py-3 space-y-3">
+                                      {sts.map(t => (
+                                        <div key={t.id} className="flex items-start gap-2.5">
+                                          <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 text-[8px] font-black ${ac.bg} ${ac.text}`}>
+                                            {t.role.charAt(0)}
+                                          </div>
+                                          <div className="flex-1">
+                                            <div className="flex items-center gap-2 mb-0.5">
+                                              <span className={`text-[9px] font-bold uppercase ${ac.text}`}>{t.role}</span>
+                                              <span className="text-[9px] text-stone-300 font-mono">{t.timestamp}</span>
+                                            </div>
+                                            <div className="text-xs text-stone-600 leading-relaxed break-words"><MarkdownText text={t.content} className="break-all" /></div>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
       </div>
-    </div>
+
+      {/* FOOTER */}
+      <footer className="border-t mt-12 py-6" style={{ borderColor: "#e8e2d9", background: "rgba(250,249,247,0.8)" }}>
+        <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-stone-400">
+            <Shield className="w-3 h-3" />
+            <span className="text-[10px] font-black uppercase tracking-[0.3em]">Sentinel Fusion V4</span>
+          </div>
+          <span className="text-[10px] text-stone-400 font-medium">PT Gemilang Satria Perkasa · © 2026 Strategic OPS</span>
+        </div>
+      </footer>
+    </main>
   );
 }
+

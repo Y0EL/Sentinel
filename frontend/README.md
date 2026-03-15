@@ -1,36 +1,54 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SENTINEL Frontend — Cyber Threat Intelligence Dashboard
+
+Frontend Next.js untuk platform SENTINEL CTI & Fusion. Menyediakan dashboard real-time untuk analisis multi-ancaman dengan tracking progress agent yang sedang berjalan.
+
+## Fitur Utama
+
+- **Multi-TC Analysis Interface**: Analisis hingga 3 threat case secara simultan (sequential processing)
+- **Real-time Agent Progress**: WebSocket integration untuk live tracking setiap stage analisis
+- **Drag & Drop File Upload**: Support untuk gambar (PNG/JPG) dan PDF dengan ekstraksi otomatis
+- **Consolidated Reports**: Download laporan gabungan (PDF, SIEM JSON, SOAR Markdown, Integrity Report)
+- **Responsive Design**: UI modern dengan Framer Motion animations
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+- Node.js 18+
+- Backend SENTINEL running at http://localhost:8000
+
+### Installation
 
 ```bash
+# Install dependencies
+npm install
+
+# Start development server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) with your browser to access the dashboard.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## API Integration
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Frontend terhubung ke backend melalui:
+- REST API endpoints untuk analisis dan konsolidasi
+- WebSocket connection untuk real-time progress updates
+- File download endpoints untuk hasil analisis
 
-## Learn More
+## Video Demo
 
-To learn more about Next.js, take a look at the following resources:
+- **Frontend User Interface POV**: https://youtu.be/VeDtRqhJ6mw
+- **Terminal Command Line POV**: https://youtu.be/976HL1UGxvY
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Technology Stack
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- **Framework**: Next.js 14 with App Router
+- **Styling**: TailwindCSS
+- **Icons**: Lucide React
+- **Animations**: Framer Motion
+- **State Management**: React Hooks
+- **API Communication**: Fetch API & WebSocket
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+*Dikembangkan sebagai bagian dari GSP Task Assessment 2026*

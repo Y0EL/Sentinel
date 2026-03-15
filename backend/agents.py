@@ -2,6 +2,7 @@ from crewai import Agent, Task, Crew, Process
 from langchain_groq import ChatGroq
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_ollama import ChatOllama
+from langchain_openai import ChatOpenAI
 import os
 from dotenv import load_dotenv
 from intelligence_collector import IntelCollector
@@ -35,21 +36,21 @@ load_dotenv()
 # Priority: Gemini (fast, free) → Groq (fast, free) → Ollama (local, unlimited)
 
 def get_llm():
-    """Get LLM with fallback chain: Gemini → Groq → Ollama"""
+    """Get LLM with fallback chain: GPT-4.1 nano → Groq → OpenAI gpt-3.5-turbo → Ollama"""
     
-    # 1. Try Gemini first (already in requirements.txt)
-    gemini_key = os.getenv("GOOGLE_API_KEY")
-    if gemini_key:
+    # 1. Try GPT-4.1 nano first (cheapest, supports images, 1M context)
+    openai_key = os.getenv("OPENAI_API_KEY")
+    if openai_key:
         try:
-            return ChatGoogleGenerativeAI(
-                model="gemini-2.0-flash",
+            return ChatOpenAI(
+                model="gpt-4.1-nano",
                 temperature=0.4,
-                google_api_key=gemini_key
+                api_key=openai_key
             )
         except Exception as e:
-            print(f"Gemini failed: {e}")
+            print(f"GPT-4.1 nano failed: {e}")
     
-    # 2. Fallback to Groq
+    # 2. Fallback to Groq (fast and affordable)
     groq_key = os.getenv("GROQ_API_KEY")
     if groq_key:
         try:
@@ -61,7 +62,18 @@ def get_llm():
         except Exception as e:
             print(f"Groq failed: {e}")
     
-    # 3. Last resort: Ollama (local)
+    # 3. Fallback to OpenAI gpt-3.5-turbo (cheap and reliable)
+    if openai_key:
+        try:
+            return ChatOpenAI(
+                model="gpt-3.5-turbo",
+                temperature=0.4,
+                api_key=openai_key
+            )
+        except Exception as e:
+            print(f"OpenAI gpt-3.5-turbo failed: {e}")
+    
+    # 4. Last resort: Ollama (local)
     try:
         return ChatOllama(
             model="qwen2.5:7b",
@@ -70,7 +82,7 @@ def get_llm():
         )
     except Exception as e:
         print(f"Ollama failed: {e}")
-        raise Exception("No LLM available. Please set GOOGLE_API_KEY or GROQ_API_KEY or run Ollama locally")
+        raise Exception("No LLM available. Please set OPENAI_API_KEY or GROQ_API_KEY or run Ollama locally")
 
 llm = get_llm()
 

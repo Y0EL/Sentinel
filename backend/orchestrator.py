@@ -18,6 +18,9 @@ class SentinelCrew:
 
     async def run(self, on_chunk=None):
         import os as _os
+        # Disable CrewAI tracing for speed
+        _os.environ["CREWAI_TELEMETRY_ENABLED"] = "false"
+        
         # 1. Stable clean_id from target — used for ALL export filenames
         _base_clean = "".join([c if c.isalnum() else "_" for c in self.target]).strip("_")
 
@@ -333,11 +336,14 @@ class SentinelCrew:
             except Exception as e:
                 print(f"Error in task_callback: {e}")
 
+        # Use sequential process for stability (hierarchical requires manager_llm)
+        from agents import get_llm
         sentinel_crew = Crew(
             agents=[collector_agent, vision_agent, fusion_agent, ops_agent, reporter_agent],
             tasks=[collect_task, vision_task, fusion_task, ops_task, report_task],
             process=Process.sequential,
-            verbose=True,
+            manager_llm=get_llm(),  # Required for hierarchical, but using sequential for now
+            verbose=False,  # Disable verbose for speed
             step_callback=step_callback,
             task_callback=task_callback,
         )
@@ -447,11 +453,16 @@ class SentinelCrew:
 
         try:
             report_gen = ReportGenerator(report_path)
+            
+            # Safety checks untuk data yang mungkin kosong
+            safe_analysis = final_report or "Analisis tidak tersedia. LLM tidak menghasilkan output."
+            safe_fusion = fusion_details if isinstance(fusion_details, dict) else {}
+            
             report_gen.generate({
                 "target": self.target,
                 "risk_score": risk,
-                "analysis": final_report,
-                "fusion_details": fusion_details
+                "analysis": safe_analysis,
+                "fusion_details": safe_fusion
             })
         except PermissionError:
             print(f"ERROR: Permission denied on {report_path}. PLEASE CLOSE THE PDF VIEWER.")
@@ -463,32 +474,36 @@ class SentinelCrew:
         try:
             siem = SIEMExporter()
 
-            # Extract MITRE ATT&CK data from fusion_details
+            # Extract MITRE ATT&CK data dengan safety check
             mitre_data = fusion_details.get("mitre_attack", {}) if isinstance(fusion_details, dict) else {}
             
-            alert = siem.to_ecs({
-                "ip":     self.target if ioc_t == "ip" else None,
-                "hash":   self.target if ioc_t in ("sha256","md5","sha1") else None,
-                "domain": self.target if ioc_t == "domain" else None,
-                "ioc_type": ecs_ioc_type,
+            # Safety checks untuk semua data SIEM
+            safe_feed_results = intel_data.get("feed_results", {}) or {}
+            safe_conflicts = [c.model_dump() if hasattr(c, 'model_dump') else c for c in conflict_list] if conflict_list else []
+            safe_fusion_for_siem = fusion_details if isinstance(fusion_details, dict) else {}
+            safe_active_sources = active_sources if active_sources else []
+            
+            ecs_alert = siem.to_ecs({
+                "target": self.target,
+                "feed_results": safe_feed_results,
+                "integrity_conflicts": safe_conflicts,
+                "fusion_details": safe_fusion_for_siem,
+                "active_sources": safe_active_sources,
                 "integrity_conflict": conflict,
-                "integrity_conflicts": conflict_list,
-                "reasoning": reasoning_text,
-                "severity": risk,
-                "active_sources": active_sources,
-                "confidence_score": fusion_details.get("confidence_score", 0.5) if isinstance(fusion_details, dict) else 0.5,
-                "mitre_attack": mitre_data,  # Pass MITRE data
             })
-            siem.save_json(alert, siem_path)
+            siem.save_json(ecs_alert, siem_path)
 
             # ── D3 Deliverable: Standalone SOAR Playbook (.md) ──────────────
+            # Safety checks untuk SOAR data
+            safe_active_sources_soar = active_sources if active_sources else []
+            safe_conflicts_soar = conflict_list if conflict_list else []
+            
             playbook_md = siem.generate_soar_playbook(
                 target=self.target,
                 risk_score=risk,
                 integrity_conflict=conflict,
-                active_sources=active_sources,
-                ttps=mitre_data,  # Pass full MITRE data
-                conflict_details=conflict_list,
+                active_sources=safe_active_sources_soar,
+                conflict_details=safe_conflicts_soar,
             )
             with open(soar_path, "w", encoding="utf-8") as pf:
                 pf.write(playbook_md)
@@ -503,7 +518,7 @@ class SentinelCrew:
                 "active_sources": active_sources,
                 "integrity_conflict_detected": conflict,
                 "conflict_count": len(conflict_list),
-                "conflicts": conflict_list,
+                "conflicts": [c.model_dump() if hasattr(c, 'model_dump') else c for c in conflict_list],
                 "aggregate_confidence": fusion_details.get("confidence_score", 0.5) if isinstance(fusion_details, dict) else 0.5,
                 "consensus_severity": risk,
                 "notes": (

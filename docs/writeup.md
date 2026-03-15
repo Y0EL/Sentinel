@@ -16,12 +16,12 @@ Filosofi desain SENTINEL berfokus pada tiga prinsip: (1) setiap klaim harus memi
 
 ### 2.1 Pipeline Multi-Agen (CrewAI)
 
-Sistem dibangun menggunakan orkestrasi agen berbasis **CrewAI dengan GPT-4o** sebagai LLM utama. Lima agen bekerja dalam pipeline sekuensial yang terstruktur:
+Sistem dibangun menggunakan orkestrasi agen berbasis **CrewAI dengan GPT-4.1 nano** sebagai LLM utama. Lima agen bekerja dalam pipeline sekuensial yang terstruktur:
 
 | Agen | Peran | Output Utama |
 |------|-------|--------------|
 | **Lead Intelligence Collector** | Query multi-sumber: VirusTotal, MalwareBazaar, URLhaus, TAXII/STIX | Raw CTI per-feed dengan timestamp dan confidence weight |
-| **Visual Evidence Specialist** | Analisis artefak visual via Gemini 1.5 Pro (VLM/OCR) | Ekstraksi IoC dari screenshot, log visual, atau gambar malware |
+| **Visual Evidence Specialist** | Analisis artefak visual via GPT-4.1 nano (VLM/OCR) | Ekstraksi IoC dari screenshot, log visual, atau gambar malware |
 | **Threat Fusion Analyst** | Korelasi silang, deteksi konflik integritas, kalkulasi skor risiko | `FusionResult` JSON (Pydantic-validated) |
 | **SIEM/SOAR Specialist** | Transformasi temuan ke standar ECS + playbook SOAR | Alert JSON (ECS) + SOAR Playbook Markdown |
 | **Strategic Reporter** | Penyusunan Laporan Intelijen Ancaman (LIA) formal | PDF laporan dalam Bahasa Indonesia |
@@ -48,9 +48,9 @@ Module `mitre_mapping.py` memetakan >30 malware family dan kategori ancaman ke t
 
 ### TC2 — Ancaman Ambigu (Domain Aktif)
 
-**Target**: `docinstall.top` (SSA Stealer Distribution Point)
+**Target**: `175.165.126.169` (IP dengan sinyal terbatas)
 
-**Hasil**: IoC ini merupakan domain aktif dengan sinyal reputasi dari beberapa feed. Sistem menggunakan reasoning berbasis elemen pendukung — tags, categories, dan data distribusi URLhaus — untuk menentukan skor risiko proporsional meskipun data dari sumber individual bervariasi. Confidence score disesuaikan secara dinamis berdasarkan jumlah sumber yang merespons.
+**Hasil**: IoC ini menunjukkan bagaimana sistem menangani data sparse. Dengan hanya 1-2 sumber yang merespon, AI memberikan analisis risk-based dengan reasoning yang mengintegrasikan tags, categories, dan data distribusi yang tersedia. Confidence score disesuaikan secara proporsional terhadap jumlah sumber yang merespon, menunjukkan kemampuan uncertainty quantification dalam kondisi informasi terbatas.
 
 ### TC3 — Integrity Trap (Anti-Cheat Detection)
 
@@ -66,8 +66,8 @@ Module `mitre_mapping.py` memetakan >30 malware family dan kategori ancaman ke t
 
 | Teknologi | Alasan Pemilihan |
 |-----------|-----------------|
-| **CrewAI + GPT-4o** | Kemampuan reasoning superior, dukungan Structured Output (Pydantic), memastikan konsistensi skema di seluruh pipeline |
-| **Gemini 1.5 Pro (VLM)** | Jendela konteks 1M token, akurasi OCR tinggi pada artefak digital, kemampuan analisis gambar multi-modal |
+| **CrewAI + GPT-4.1 nano** | Kemampuan reasoning superior, dukungan Structured Output (Pydantic), memastikan konsistensi skema di seluruh pipeline |
+| **GPT-4.1 nano (VLM)** | Model vision terbaru dari OpenAI, 1M context window, akurasi OCR tinggi pada artefak digital |
 | **Elastic Common Schema (ECS)** | Standar industri yang kompatibel dengan Elastic SIEM, Splunk, dan IBM QRadar tanpa konversi tambahan |
 | **FastAPI + WebSocket** | Async-first, real-time streaming progress update ke frontend tanpa polling |
 | **ReportLab (PDF)** | Kontrol layout penuh untuk laporan profesional, bebas dependensi cloud rendering |
@@ -112,4 +112,21 @@ Untuk evaluasi multi-TC, endpoint `POST /consolidate` menghasilkan PDF gabungan 
 SENTINEL membuktikan bahwa platform CTI dapat dibangun dengan pendekatan "reasoning-first" yang memprioritaskan atribusi sumber, transparansi konflik, dan output yang langsung dapat dikonsumsi oleh infrastruktur keamanan yang ada. Keunggulan utama platform ini bukan sekadar pengumpulan data, tetapi kemampuannya untuk **mendeteksi dan melaporkan disinformasi** dalam feed CTI — sebuah kemampuan kritis di era threat intelligence manipulation yang semakin canggih.
 
 ---
+
+## 8. Demo & Bukti Fungsional
+
+Video demo telah disiapkan untuk menunjukkan end-to-end functionality:
+
+1. **Frontend User Interface POV**: https://youtu.be/VeDtRqhJ6mw
+   - Menunjukkan dashboard multi-TC analysis
+   - Real-time agent progress tracking
+   - Hasil konsolidasi dan download files
+
+2. **Terminal Command Line POV**: https://youtu.be/976HL1UGxvY
+   - Proses backend analysis
+   - Agent reasoning logs
+   - File generation dan exports
+
+---
+
 *Laporan ini merupakan bagian dari deliverable D4 untuk GSP Task Assessment 2026.*

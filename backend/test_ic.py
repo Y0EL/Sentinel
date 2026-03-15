@@ -39,7 +39,7 @@ mock_feeds = {
 }
 conflicts = ic_mod._detect_conflicts(mock_feeds)
 assert len(conflicts) > 0, "Should detect VT=HIGH vs OTX=INFO conflict (delta=3)"
-print(f"✓ Conflict detection: found {len(conflicts)} conflicts — {[c['type'] for c in conflicts]}")
+print(f"✓ Conflict detection: found {len(conflicts)} conflicts — {[c.type for c in conflicts]}")
 
 # Test aggregate confidence with conflicts
 conf = ic_mod._aggregate_confidence(mock_feeds, conflicts)

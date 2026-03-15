@@ -34,9 +34,9 @@ class FusionResult(BaseModel):
         default_factory=list,
         description="List of CTI sources that returned data"
     )
-    conflict_details: List[str] = Field(
+    conflict_details: List[IntegrityConflict] = Field(
         default_factory=list,
-        description="List of human-readable text descriptions for each conflict detected"
+        description="List of IntegrityConflict objects for each detected conflict"
     )
 
 

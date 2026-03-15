@@ -28,28 +28,24 @@ collect_task = Task(
 
     STEP 1: Call get_threat_intel("{target}") — this queries SIMULTANEOUSLY:
       • VirusTotal v3       — vendor malicious count, reputation score, tags, categories
-      • MalwareBazaar       — hash signature, YARA rules (hashes only)
-      • URLhaus             — host/URL blacklist, threat type (domains/IPs)
-      • TAXII/STIX          — STIX indicator pattern matches in public CTI feeds
+      • MalwareBazaar       — first_seen, last_seen, signature, file_type
+      • URLhaus            — related URLs, malware distribution
+      • TAXII/STIX feeds    — campaign/actor attribution if available
 
+    STEP 2: Parse and structure findings:
+      • Extract ALL IoCs (IPs, domains, hashes, URLs)
+      • Note source-specific confidence weights
+      • Record exact timestamps for provenance
 
-    STEP 2: Report the following for EACH source separately:
-      • Source name + timestamp (provenance)
-      • Status: ok / not_found / error / skipped
-      • Key finding (severity assessment)
-      • Confidence weight
+    STEP 3: Initial severity assessment:
+      • CRITICAL: 15+ engines positive OR active C2/malware distribution
+      • HIGH: 10-14 engines OR known malware family
+      • MEDIUM: 5-9 engines OR suspicious behavior
+      • LOW: 1-4 engines OR limited intelligence
+      • INFO: 0 engines OR clean reputation
 
-    STEP 3: Report the consensus_severity and aggregate_confidence.
-
-    STEP 4: CRITICAL — Report ALL integrity_conflicts from the data.
-      If integrity_conflicts is non-empty, list EACH conflict explicitly:
-        - Which two sources disagree
-        - What each says (severity A vs severity B)
-        - The delta and description
-      If no conflicts: state "Tidak ada konflik intelijen antar sumber terdeteksi."
-
-    STEP 5: Report active_sources count vs total sources queried.
-    """ + NO_HALLUCINATION,
+    OUTPUT: JSON with ALL source data, provenance timestamps, and preliminary severity.
+    """,
     expected_output="""
     A structured multi-source intelligence report containing:
     1. Per-source findings table (source | status | severity | key finding | timestamp)
@@ -126,7 +122,7 @@ fusion_task = Task(
             (e.g., VT=HIGH vs OTX=INFO, or URLhaus=CRITICAL vs VT=LOW)
          b) OR: visual evidence directly contradicts text CTI consensus
             (e.g., VT=CLEAN but image shows active C2 dashboard)
-         c) OR: the integrity_conflicts list from Task 1 data is non-empty
+         c) OR: integrity_conflicts list from Task 1 data is non-empty
        - integrity_conflict = false ONLY if all active sources agree within 1 level
          AND visual evidence (if any) does not contradict
 
@@ -145,7 +141,7 @@ fusion_task = Task(
     4. REASONING must explicitly mention:
        - Which sources are active/failed
        - Confidence weight of each active source
-       - Any conflicts detected and their impact on assessmentIf
+       - Any conflicts detected and their impact on assessment
        - Provenance for every claim (source + timestamp)
 
     YOUR ENTIRE RESPONSE MUST BE A SINGLE, VALID JSON OBJECT. No markdown, no prose before or after.

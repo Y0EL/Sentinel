@@ -1,0 +1,17 @@
+{
+  "consolidated_analysis": true,
+  "targets": [
+    "1daf7482d700536bc5dfe45c763dad99123e41f0be205415d708b70e6dcbfbb2",
+    "e23585aefbb887977440af86195fe0ebf7763e10f2255217dbde7c1545de0a27",
+    "8.8.8.8"
+  ],
+  "timestamp": "15-Mar-2026 13:35 WIB",
+  "total_iocs": 3,
+  "severity_distribution": {
+    "HIGH": 1,
+    "MEDIUM": 2,
+    "LOW": 0,
+    "INFO": 0
+  },
+  "indicators": []
+}

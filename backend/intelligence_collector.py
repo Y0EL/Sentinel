@@ -495,8 +495,10 @@ def _query_fake_feed(target: str) -> dict:
 def _detect_conflicts(feed_results: dict) -> list:
     """
     Compare severity assessments across feeds.
-    Returns a list of conflict dicts when feeds disagree.
+    Returns a list of IntegrityConflict objects when feeds disagree.
     """
+    from models import IntegrityConflict
+    
     SEVERITY_ORDER = {"CRITICAL": 5, "HIGH": 4, "MEDIUM": 3, "LOW": 2, "INFO": 1}
     conflicts = []
 
@@ -521,35 +523,35 @@ def _detect_conflicts(feed_results: dict) -> list:
             logger.info(f"[CONFLICT_CHECK] Comparing {s1}({assessments[s1]}) vs {s2}({assessments[s2]}): delta={diff}")
 
             if diff >= 2:
-                conflict_entry = {
-                    "type": "SEVERITY_DISCREPANCY",
-                    "source_a": s1,
-                    "severity_a": assessments[s1],
-                    "source_b": s2,
-                    "severity_b": assessments[s2],
-                    "delta": diff,
-                    "description": (
+                conflict_entry = IntegrityConflict(
+                    type="SEVERITY_DISCREPANCY",
+                    source_a=s1,
+                    severity_a=assessments[s1],
+                    source_b=s2,
+                    severity_b=assessments[s2],
+                    delta=diff,
+                    description=(
                         f"{s1} rates this IoC as {assessments[s1]} "
                         f"while {s2} rates it as {assessments[s2]}. "
                         f"Severity delta = {diff}. Manual analyst review required."
-                    ),
-                }
+                    )
+                )
                 conflicts.append(conflict_entry)
                 logger.warning(f"[CONFLICT_CHECK] ⚠️ MAJOR CONFLICT DETECTED: {s1} vs {s2}, delta={diff}")
             elif diff == 1:
                 # Minor disagreement — flag as informational
-                conflicts.append({
-                    "type": "SEVERITY_MINOR_DISCREPANCY",
-                    "source_a": s1,
-                    "severity_a": assessments[s1],
-                    "source_b": s2,
-                    "severity_b": assessments[s2],
-                    "delta": diff,
-                    "description": (
+                conflicts.append(IntegrityConflict(
+                    type="SEVERITY_MINOR_DISCREPANCY",
+                    source_a=s1,
+                    severity_a=assessments[s1],
+                    source_b=s2,
+                    severity_b=assessments[s2],
+                    delta=diff,
+                    description=(
                         f"Minor discrepancy: {s1}={assessments[s1]}, "
                         f"{s2}={assessments[s2]}. Confidence adjustment applied."
-                    ),
-                })
+                    )
+                ))
 
     return conflicts
 
@@ -573,7 +575,7 @@ def _aggregate_confidence(feed_results: dict, conflicts: list) -> float:
             total_score += w * s
 
     base = total_score / total_w if total_w > 0 else 0.1
-    penalty = 0.05 * len([c for c in conflicts if c["type"] == "SEVERITY_DISCREPANCY"])
+    penalty = 0.05 * len([c for c in conflicts if c.type == "SEVERITY_DISCREPANCY"])
     return max(0.05, round(base - penalty, 3))
 
 

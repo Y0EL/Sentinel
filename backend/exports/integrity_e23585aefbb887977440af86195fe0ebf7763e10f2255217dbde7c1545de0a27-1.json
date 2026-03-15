@@ -1,0 +1,24 @@
+{
+    "target": "e23585aefbb887977440af86195fe0ebf7763e10f2255217dbde7c1545de0a27",
+    "analysis_timestamp": "15-Mar-2026 13:24 WIB",
+    "active_sources": [
+        "VirusTotal",
+        "MalwareBazaar"
+    ],
+    "integrity_conflict_detected": false,
+    "conflict_count": 1,
+    "conflicts": [
+        {
+            "type": "SEVERITY_MINOR_DISCREPANCY",
+            "source_a": "VirusTotal",
+            "severity_a": "HIGH",
+            "source_b": "MalwareBazaar",
+            "severity_b": "MEDIUM",
+            "delta": 1,
+            "description": "Minor discrepancy: VirusTotal=HIGH, MalwareBazaar=MEDIUM. Confidence adjustment applied."
+        }
+    ],
+    "aggregate_confidence": 0.7,
+    "consensus_severity": "HIGH",
+    "notes": "All active CTI sources are in agreement on this indicator's risk level."
+}

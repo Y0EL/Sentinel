@@ -1,25 +1,47 @@
-import google.generativeai as genai
+import openai
 import os
-from PIL import Image
+import base64
 from dotenv import load_dotenv
 
 load_dotenv()
 
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+# Configure OpenAI
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 class VisionAnalyzer:
     def __init__(self):
-        self.model = genai.GenerativeModel('gemini-1.5-pro')
+        self.model = "gpt-4.1-nano"  # Latest OpenAI vision model
 
     def analyze_image(self, image_path, prompt):
         if not os.path.exists(image_path):
             return {"error": "Image file not found"}
         
         try:
-            img = Image.open(image_path)
-            response = self.model.generate_content([prompt, img])
+            # Read and encode image
+            with open(image_path, "rb") as image_file:
+                base64_image = base64.b64encode(image_file.read()).decode('utf-8')
+            
+            response = openai.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{base64_image}"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                max_tokens=1000
+            )
+            
             return {
-                "analysis": response.text,
+                "analysis": response.choices[0].message.content,
                 "status": "success"
             }
         except Exception as e:

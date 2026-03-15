@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "SENTINEL — Intelligence Command",
+  title: "Sentinel",
   description: "Multi-Agent Cyber Threat Intelligence & Fusion Platform",
 };
 

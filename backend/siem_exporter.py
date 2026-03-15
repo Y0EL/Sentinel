@@ -1,6 +1,7 @@
 import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+from models import IntegrityConflict
 
 
 class SIEMExporter:
@@ -46,10 +47,17 @@ class SIEMExporter:
 
         # Conflict summary
         conflicts = data.get("integrity_conflicts") or []
-        conflict_summary = (
-            "; ".join(c.get("description", "") for c in conflicts[:3])
-            if conflicts else None
-        )
+        conflict_summary = None
+        if conflicts:
+            descriptions = []
+            for c in conflicts[:3]:
+                if hasattr(c, 'description'):
+                    descriptions.append(c.description)
+                elif isinstance(c, dict):
+                    descriptions.append(c.get('description', ''))
+                elif isinstance(c, str):
+                    descriptions.append(c)
+            conflict_summary = "; ".join(filter(None, descriptions))
 
         ecs_alert = {
             "@timestamp": datetime.now(timezone.utc).isoformat(),
@@ -128,7 +136,7 @@ class SIEMExporter:
         integrity_conflict: bool,
         active_sources: List[str],
         ttps: Optional[Any] = None,
-        conflict_details: Optional[List[Any]] = None,
+        conflict_details: Optional[List[IntegrityConflict]] = None,
     ) -> str:
         """
         Generate a standalone SOAR playbook Markdown file.
@@ -171,9 +179,27 @@ class SIEMExporter:
                 "Detail konflik:",
             ]
             for i, c in enumerate(conflict_details, 1):
+                # Handle both IntegrityConflict objects and dicts
+                if hasattr(c, 'source_a'):
+                    source_a = c.source_a
+                    severity_a = c.severity_a
+                    source_b = c.source_b
+                    severity_b = c.severity_b
+                    description = c.description
+                elif isinstance(c, dict):
+                    source_a = c.get('source_a', 'Unknown')
+                    severity_a = c.get('severity_a', 'Unknown')
+                    source_b = c.get('source_b', 'Unknown')
+                    severity_b = c.get('severity_b', 'Unknown')
+                    description = c.get('description', 'No description')
+                else:
+                    # Fallback for string or other types
+                    description = str(c)
+                    source_a, severity_a, source_b, severity_b = "Unknown", "Unknown", "Unknown", "Unknown"
+                
                 lines.append(
-                    f"- **Konflik #{i}:** {c.get('source_a', '?')} [{c.get('severity_a', '?')}] "
-                    f"vs {c.get('source_b', '?')} [{c.get('severity_b', '?')}] — {c.get('description', '')}"
+                    f"- **Konflik #{i}:** {source_a} [{severity_a}] "
+                    f"vs {source_b} [{severity_b}] — {description}"
                 )
             lines += ["", "---", ""]
 
@@ -198,11 +224,11 @@ class SIEMExporter:
             descriptions = ttps.get('descriptions', [])
             if tactics or techniques or descriptions:
                 lines += ["", "### MITRE ATT&CK TTPs Teridentifikasi:"]
-                if tactics:
+                if tactics and isinstance(tactics, list):
                     lines.append(f"**Tactics**: {', '.join(tactics[:5])}")
-                if techniques:
+                if techniques and isinstance(techniques, list):
                     lines.append(f"**Techniques**: {', '.join(techniques[:5])}")
-                if descriptions:
+                if descriptions and isinstance(descriptions, list):
                     for desc in descriptions[:3]:
                         lines.append(f"- {desc}")
 
